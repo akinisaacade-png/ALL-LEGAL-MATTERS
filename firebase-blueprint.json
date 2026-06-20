@@ -1,0 +1,43 @@
+{
+  "$schema": "https://raw.githubusercontent.com/google/ai-studio-blueprints/main/schema.json",
+  "collections": {
+    "documents": {
+      "fields": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+         "category": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "uploadedAt": { "type": "string" },
+        "size": { "type": "string" },
+        "riskScore": { "type": "number" },
+        "status": { "type": "string" },
+        "content": { "type": "string" },
+        "changeSummary": { "type": "string" },
+        "clauses": { "type": "array" },
+        "suggestedRedlines": { "type": "array" },
+        "versions": { "type": "array" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "bookings": {
+      "fields": {
+        "id": { "type": "string" },
+        "lawyerId": { "type": "string" },
+        "lawyerName": { "type": "string" },
+        "duration": { "type": "number" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "retainerFee": { "type": "number" },
+        "status": { "type": "string" },
+        "syncedWithCalendar": { "type": "boolean" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    }
+  }
+}

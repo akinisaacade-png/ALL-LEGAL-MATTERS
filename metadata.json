@@ -1,0 +1,10 @@
+{
+  "name": "All Legal Matters",
+  "description": "Grounded global legal compliance database & multi-agent AI counseling system with secure document vault and consulting booking.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
