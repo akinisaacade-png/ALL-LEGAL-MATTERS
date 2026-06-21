@@ -253,6 +253,21 @@ export default function App() {
     subscriptionId?: string;
   } | null>(null);
   const [stripeLoading, setStripeLoading] = useState<boolean>(false);
+  const [subLoaded, setSubLoaded] = useState<boolean>(false);
+
+  // User Profile & 7-day Free Trial States
+  const [userProfile, setUserProfile] = useState<{
+    email: string;
+    createdAt: string;
+  } | null>(null);
+  const [trialStatus, setTrialStatus] = useState<{
+    isTrialActive: boolean;
+    daysRemaining: number;
+    daysTotal: number;
+  }>({ isTrialActive: true, daysRemaining: 7, daysTotal: 7 });
+  const [trialLoaded, setTrialLoaded] = useState<boolean>(false);
+
+  const isPremiumOrTrialActive = subscription?.status === "active" || trialStatus.isTrialActive;
 
   // Toast Notification state
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -295,9 +310,10 @@ export default function App() {
     }, 4500);
   };
 
-  // Fetch Subscription on start, process Stripe success/cancel redirects
+  // Fetch Subscription and Register 7-day Free Trial on startup
   useEffect(() => {
     fetchSubscription();
+    registerAndCheckTrial();
 
     const params = new URLSearchParams(window.location.search);
     const checkoutStatus = params.get("stripe_checkout");
@@ -346,6 +362,16 @@ export default function App() {
     }
   }, []);
 
+  // Automatically redirect unsubscribed user to Membership page upon trial expiration
+  useEffect(() => {
+    if (subLoaded && trialLoaded) {
+      if (!isPremiumOrTrialActive) {
+        setActiveTab("billing");
+        showToast("⚠️ Your 7-day free trial has expired. Directing to Membership page to reactive Premium AI services.");
+      }
+    }
+  }, [subLoaded, trialLoaded, isPremiumOrTrialActive]);
+
   const fetchSubscription = async () => {
     const userEmail = "akinisaacade@gmail.com";
     try {
@@ -360,6 +386,7 @@ export default function App() {
           priceId: data.priceId,
           subscriptionId: data.subscriptionId
         });
+        setSubLoaded(true);
         return;
       }
     } catch (e) {
@@ -382,6 +409,69 @@ export default function App() {
       }
     } catch (e) {
       console.error("Error fetching subscription from stripe backend:", e);
+    } finally {
+      setSubLoaded(true);
+    }
+  };
+
+  const registerAndCheckTrial = async () => {
+    const userEmail = "akinisaacade@gmail.com";
+    try {
+      const userRef = doc(db, "users", userEmail.replace(/\./g, "_"));
+      const userSnap = await getDoc(userRef);
+      let profileData;
+      if (userSnap.exists()) {
+        profileData = userSnap.data() as { email: string; createdAt: string };
+      } else {
+        // Newly registered user! Create profile with 7-day free trial
+        profileData = {
+          email: userEmail,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(userRef, profileData);
+        setTimeout(() => {
+          showToast("🎁 Welcome! Your 7-day Premium Free Trial has started.");
+        }, 1200);
+      }
+      
+      setUserProfile(profileData);
+      
+      // Calculate trial status
+      const now = new Date();
+      const regDate = new Date(profileData.createdAt);
+      const diffTime = now.getTime() - regDate.getTime();
+      const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
+      const daysRemaining = Math.max(0, 7 - diffDays);
+      const isTrialActive = diffDays < 7;
+      
+      setTrialStatus({
+        isTrialActive,
+        daysRemaining: Math.ceil(daysRemaining * 100) / 100,
+        daysTotal: 7
+      });
+    } catch (err) {
+      console.error("Error with Firestore user profile/trial:", err);
+      // Fallback local persistence if Firestore is unreachable
+      const cachedCreated = localStorage.getItem("trial_starts");
+      let createdAtStr = cachedCreated;
+      if (!createdAtStr) {
+        createdAtStr = new Date().toISOString();
+        localStorage.setItem("trial_starts", createdAtStr);
+      }
+      const now = new Date();
+      const regDate = new Date(createdAtStr);
+      const diffTime = now.getTime() - regDate.getTime();
+      const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
+      const daysRemaining = Math.max(0, 7 - diffDays);
+      const isTrialActive = diffDays < 7;
+
+      setTrialStatus({
+        isTrialActive,
+        daysRemaining: Math.ceil(daysRemaining * 100) / 100,
+        daysTotal: 7
+      });
+    } finally {
+      setTrialLoaded(true);
     }
   };
 
@@ -536,6 +626,12 @@ export default function App() {
   const handleSendChat = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!chatMessage.trim()) return;
+
+    if (!isPremiumOrTrialActive) {
+      setActiveTab("billing");
+      showToast("⚠️ Premium membership required: Please select a plan to activate AI co-counseling threads.");
+      return;
+    }
 
     const userMsg: ChatMessage = { sender: "user", text: chatMessage, timestamp: new Date().toLocaleTimeString() };
     setChatHistory((prev) => [...prev, userMsg]);
@@ -912,6 +1008,12 @@ export default function App() {
       return;
     }
 
+    if (!isPremiumOrTrialActive) {
+      setActiveTab("billing");
+      showToast("⚠️ Premium membership required: Please select a plan to activate AI contract OCR audits.");
+      return;
+    }
+
     setVaultLoading(true);
     try {
       const response = await fetch("/api/documents/upload", {
@@ -1049,6 +1151,13 @@ export default function App() {
       showToast("Please enter target text to synthesize speech reading.");
       return;
     }
+
+    if (!isPremiumOrTrialActive) {
+      setActiveTab("billing");
+      showToast("⚠️ Premium membership required: Please select a plan to activate Custom AI Text-to-Speech synthesis.");
+      return;
+    }
+
     setTtsSpeechLoading(true);
     setTtsAudioResult(null);
     try {
@@ -1074,6 +1183,12 @@ export default function App() {
 
   // Voice Transcribe Action
   const handlePrebuiltVoiceRecording = async () => {
+    if (!isPremiumOrTrialActive) {
+      setActiveTab("billing");
+      showToast("⚠️ Premium membership required: Please select a plan to activate AI Voice-to-Text transcription.");
+      return;
+    }
+
     setVoiceRecording(true);
     // Simulate recording latency
     setTimeout(async () => {
@@ -1106,6 +1221,13 @@ export default function App() {
       showToast("Please enter visual presentation guideline text first.");
       return;
     }
+
+    if (!isPremiumOrTrialActive) {
+      setActiveTab("billing");
+      showToast("⚠️ Premium membership required: Please select a plan to activate Veo Generative Video briefs.");
+      return;
+    }
+
     setVideoGenerating(true);
     setVideoOperation(null);
     try {
@@ -1132,6 +1254,13 @@ export default function App() {
       showToast("Please enter or upload legal text to translate first.");
       return;
     }
+
+    if (!isPremiumOrTrialActive) {
+      setActiveTab("billing");
+      showToast("⚠️ Premium membership required: Please select a plan to activate Gemini Legal Translation.");
+      return;
+    }
+
     setTranslationLoading(true);
     try {
       const response = await fetch("/api/translate", {
@@ -1248,6 +1377,42 @@ This power is durable and persists through any subsequent incapacity.`;
           </div>
         </header>
 
+        {/* Trial & Subscription Status Info Bar */}
+        <div id="trial-subscription-bar" className="bg-slate-950 border-b border-indigo-950/60 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 font-medium">Operator Context:</span>
+            <span className="bg-slate-900 border border-slate-800 text-indigo-300 px-2.5 py-0.5 rounded font-mono font-bold select-all">
+              akinisaacade@gmail.com
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-2.5">
+            {subscription?.status === "active" ? (
+              <span className="flex items-center gap-1.5 text-emerald-400 font-extrabold bg-emerald-950/40 border border-emerald-500/20 px-3 py-1 rounded-md text-[10px] uppercase tracking-wider">
+                <Award className="w-3.5 h-3.5 text-yellow-400" /> Premium Member Authorized
+              </span>
+            ) : trialStatus.isTrialActive ? (
+              <span className="flex items-center gap-1.5 text-indigo-300 font-semibold bg-indigo-950/40 border border-indigo-500/20 px-3 py-1 rounded-md text-[10px] tracking-wide">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" style={{ animationDuration: "5s" }} /> 7-Day Free Trial Remaining: <strong className="text-indigo-200">{Math.ceil(trialStatus.daysRemaining)} days</strong>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-rose-400 font-extrabold bg-rose-950/40 border border-rose-500/20 px-3 py-1 rounded-md text-[10px] uppercase tracking-wider animate-pulse">
+                ⚠️ trial expired (AI Access Suspended)
+              </span>
+            )}
+
+            {!isPremiumOrTrialActive && (
+              <button 
+                id="btn-quick-upgrade"
+                onClick={() => setActiveTab("billing")}
+                className="bg-amber-600 hover:bg-amber-500 text-white font-extrabold px-3 py-1 rounded text-[10px] transition-all hover:scale-105 active:scale-95 uppercase tracking-wide shadow"
+              >
+                Choose Subscription Plan
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Global Tab Menu - Balanced Button Panel */}
         <div id="tab-nav-panel" className="bg-slate-950/60 border-b border-slate-800 px-4 py-2 flex flex-wrap gap-2">
           <button
@@ -1264,6 +1429,11 @@ This power is durable and persists through any subsequent incapacity.`;
           <button
             id="tab-btn-counsel"
             onClick={() => {
+              if (!isPremiumOrTrialActive) {
+                setActiveTab("billing");
+                showToast("⚠️ Subscription required: AI Co-Counsel features are reserved for active trial or Premium subscribers.");
+                return;
+              }
               setActiveTab("counsel");
               // pre-fill document scan query advice if empty
               if (uploadedDocs.length > 0 && selectedVaultDoc) {
@@ -1324,7 +1494,14 @@ This power is durable and persists through any subsequent incapacity.`;
 
           <button
             id="tab-btn-multimodal"
-            onClick={() => setActiveTab("multimodal")}
+            onClick={() => {
+              if (!isPremiumOrTrialActive) {
+                setActiveTab("billing");
+                showToast("⚠️ Subscription required: AI Multimodal operations are reserved for active trial or Premium subscribers.");
+                return;
+              }
+              setActiveTab("multimodal");
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
               activeTab === "multimodal" ? "bg-indigo-600 text-white border-b-2 border-amber-400" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
@@ -1335,7 +1512,14 @@ This power is durable and persists through any subsequent incapacity.`;
 
           <button
             id="tab-btn-translation"
-            onClick={() => setActiveTab("translation")}
+            onClick={() => {
+              if (!isPremiumOrTrialActive) {
+                setActiveTab("billing");
+                showToast("⚠️ Subscription required: AI Legal Translations are reserved for active trial or Premium subscribers.");
+                return;
+              }
+              setActiveTab("translation");
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
               activeTab === "translation" ? "bg-indigo-600 text-white border-b-2 border-amber-400" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
@@ -4304,7 +4488,7 @@ This power is durable and persists through any subsequent incapacity.`;
                     </h4>
                     <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
                       This system operates inside a fully secured sandboxed workspace integrated with Stripe Payment checkouts. 
-                      You can run checkout operations using Stripe test mode credentials. Complete transactions instantly with the 
+                      You can run checkout operations using Stripe credentials. Complete transactions instantly with the 
                       standard Stripe sandbox testing account card:
                     </p>
                     <div className="flex flex-wrap items-center gap-3 pt-1 text-xs font-mono">
@@ -4315,6 +4499,12 @@ This power is durable and persists through any subsequent incapacity.`;
                       <span className="text-slate-400">CVV/EXP:</span>
                       <strong className="bg-slate-900 px-2 py-1 rounded border border-slate-800 text-white select-all">
                         Any (e.g. 123, 12/28)
+                      </strong>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-mono border-t border-slate-900 mt-2">
+                      <span className="text-amber-400 font-bold">Publishable Key:</span>
+                      <strong className="bg-indigo-950/40 px-2.5 py-1 rounded border border-indigo-900/40 text-indigo-300 select-all tracking-tight font-bold">
+                        {(import.meta as any).env?.VITE_STRIPE_PUBLISHABLE_KEY || "pk_live_Y8I4kIWBXPdQIfZ2tthPIFwV00DlqCjZva"}
                       </strong>
                     </div>
                   </div>
