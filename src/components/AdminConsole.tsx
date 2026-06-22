@@ -14,10 +14,12 @@ import {
   UserCheck,
   UserX,
   CreditCard,
-  Plus
+  Plus,
+  Database
 } from "lucide-react";
 import { collection, getDocs, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import { seedEuropeJurisdictions } from "../utils/europeJurisdictions";
 
 interface AdminConsoleProps {
   currentUser: { email: string; name: string } | null;
@@ -292,14 +294,37 @@ export default function AdminConsole({ currentUser, showToast, onRefreshAll }: A
           </p>
         </div>
 
-        <button
-          onClick={fetchUsersAndSubscriptions}
-          disabled={loading}
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-705 text-xs font-bold rounded-lg flex items-center gap-2 transition"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
-          <span>Reload Core Cluster Lists</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              if (window.confirm("Are you sure you want to re-seed/reset the jurisdictions_europe_core collection in Firestore?")) {
+                setLoading(true);
+                try {
+                  await seedEuropeJurisdictions(true);
+                  showToast("🇪🇺 Jurisdictions collection seeded/reset successfully!");
+                } catch (e) {
+                  showToast("❌ Seeding failed.");
+                } finally {
+                  setLoading(false);
+                }
+              }
+            }}
+            disabled={loading}
+            className="px-3 py-2 bg-slate-950 border border-amber-900/60 hover:bg-slate-900 text-amber-500 hover:text-amber-400 text-xs font-bold rounded-lg flex items-center gap-2 transition"
+          >
+            <Database className="w-3.5 h-3.5 text-amber-500" />
+            <span>Reset EU Jurisdictions</span>
+          </button>
+
+          <button
+            onClick={fetchUsersAndSubscriptions}
+            disabled={loading}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-705 text-xs font-bold rounded-lg flex items-center gap-2 transition"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
+            <span>Reload Core Cluster Lists</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Board Grid */}

@@ -68,6 +68,26 @@
         "read": "true",
         "write": "true"
       }
+    },
+    "jurisdictions_europe_core": {
+      "fields": {
+        "id": { "type": "string" },
+        "country": { "type": "string" },
+        "system_type": { "type": "string" },
+        "constitutional_foundation": { "type": "array" },
+        "legislation_url": { "type": "string" },
+        "case_law_url": { "type": "string" },
+        "additional_case_law_archive": { "type": "string" },
+        "constitutional_court_url": { "type": "string" },
+        "administrative_court_url": { "type": "string" },
+        "compliance_bodies": { "type": "array" },
+        "languages": { "type": "array" },
+        "research_guide": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
     }
   }
 }

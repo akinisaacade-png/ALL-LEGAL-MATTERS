@@ -42,6 +42,7 @@ import {
   CreditCard,
   Award,
   Shield,
+  Tags,
 } from "lucide-react";
 import { JURISDICTIONS_DATA, MOCH_ATTORNEYS, LEGAL_DOMAINS } from "./data";
 import { SovereignJurisdiction, LegalDocument, ConsultationBooking, ChatMessage, Attorney, DocumentVersion } from "./types";
@@ -51,6 +52,8 @@ import { db } from "./firebase";
 import ComplianceDashboard from "./components/ComplianceDashboard";
 import AuthPortal from "./components/AuthPortal";
 import AdminConsole from "./components/AdminConsole";
+import EuropeJurisdictionsPanel from "./components/EuropeJurisdictionsPanel";
+import { seedEuropeJurisdictions } from "./utils/europeJurisdictions";
 import { scanDocumentCompliance, ComplianceAlert } from "./complianceEngine";
 
 interface SystemLogMsg {
@@ -85,6 +88,7 @@ export default function App() {
   const [selectedCountry, setSelectedCountry] = useState<string>("CA");
   const [selectedSubnational, setSelectedSubnational] = useState<string>("CA-ON");
   const [directorySearchQuery, setDirectorySearchQuery] = useState<string>("");
+  const [directoryMode, setDirectoryMode] = useState<"static" | "europe_firestore">("static");
 
   // Live Search Query Processing for Countries and States
   const getFilteredJurisdictions = () => {
@@ -153,6 +157,9 @@ export default function App() {
   const [ocrText, setOcrText] = useState<string>("");
   const [ocrDocName, setOcrDocName] = useState<string>("");
   const [ocrDocCategory, setOcrDocCategory] = useState<string>("contracts");
+  const [docSearchQuery, setDocSearchQuery] = useState<string>("");
+  const [tagInput, setTagInput] = useState<string>("");
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   
   // Custom document share details
   const [shareDocId, setShareDocId] = useState<string | null>(null);
@@ -346,6 +353,11 @@ export default function App() {
     fetchDocuments();
     fetchBookings();
     fetchSystemLogs();
+    
+    // Auto-seed European Core Jurisdictions in Firestore
+    seedEuropeJurisdictions()
+      .then(() => console.log("Europe Jurisdictions auto-seeded / verified in Firestore"))
+      .catch((err) => console.error("Error auto-seeding Europe jurisdictions:", err));
 
     const handleOnline = () => {
       setIsOnline(true);
@@ -997,6 +1009,68 @@ export default function App() {
     }
   };
 
+  const handleAddTag = async (documentId: string) => {
+    if (!tagInput.trim()) return;
+    const cleanTag = tagInput.trim().toLowerCase();
+    
+    const docToModify = uploadedDocs.find(d => d.id === documentId);
+    if (!docToModify) return;
+
+    const currentTags = docToModify.tags || [];
+    if (currentTags.includes(cleanTag)) {
+      showToast("Tag already exists on this document.");
+      return;
+    }
+
+    const updatedTags = [...currentTags, cleanTag];
+    const updatedDoc: LegalDocument = {
+      ...docToModify,
+      tags: updatedTags
+    };
+
+    setUploadedDocs(prev => prev.map(d => d.id === documentId ? updatedDoc : d));
+    setSelectedVaultDoc(updatedDoc);
+    
+    const freshList = uploadedDocs.map(d => d.id === documentId ? updatedDoc : d);
+    localStorage.setItem("cached_documents", JSON.stringify(freshList));
+
+    try {
+      await setDoc(doc(db, "documents", documentId), updatedDoc);
+      showToast(`🏷️ Tag "${cleanTag}" added successfully!`);
+    } catch (e) {
+      console.warn("Could not sync tag to Firestore, saved locally:", e);
+      showToast(`🏷️ Tag "${cleanTag}" added locally.`);
+    }
+
+    setTagInput("");
+  };
+
+  const handleRemoveTag = async (documentId: string, tagToRemove: string) => {
+    const docToModify = uploadedDocs.find(d => d.id === documentId);
+    if (!docToModify) return;
+
+    const currentTags = docToModify.tags || [];
+    const updatedTags = currentTags.filter(t => t !== tagToRemove);
+    const updatedDoc: LegalDocument = {
+      ...docToModify,
+      tags: updatedTags
+    };
+
+    setUploadedDocs(prev => prev.map(d => d.id === documentId ? updatedDoc : d));
+    setSelectedVaultDoc(updatedDoc);
+
+    const freshList = uploadedDocs.map(d => d.id === documentId ? updatedDoc : d);
+    localStorage.setItem("cached_documents", JSON.stringify(freshList));
+
+    try {
+      await setDoc(doc(db, "documents", documentId), updatedDoc);
+      showToast(`Tag "${tagToRemove}" removed.`);
+    } catch (e) {
+      console.warn("Could not sync tag removal to Firestore, updated locally:", e);
+      showToast(`Tag "${tagToRemove}" removed locally.`);
+    }
+  };
+
   const triggerDownloadOrPrintContent = (docToPrint: { name: string; content: string }) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -1118,6 +1192,19 @@ export default function App() {
     }
 
     setVaultLoading(true);
+    setUploadProgress(10);
+    
+    // Smooth progress simulation
+    const progressInterval = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return 90;
+        }
+        return prev + Math.floor(Math.random() * 8) + 4;
+      });
+    }, 120);
+
     try {
       const response = await fetch("/api/documents/upload", {
         method: "POST",
@@ -1130,14 +1217,26 @@ export default function App() {
       });
       const resData = await response.json();
       if (resData && resData.document) {
-        setUploadedDocs((prev) => [resData.document, ...prev]);
-        setSelectedVaultDoc(resData.document);
+        clearInterval(progressInterval);
+        setUploadProgress(100);
+        
+        // Give a short pause to let user see 100% completion perfectly
+        await new Promise((resolve) => setTimeout(resolve, 400));
+
+        // Initialize tags field
+        const docWithTags = {
+          ...resData.document,
+          tags: resData.document.tags || []
+        };
+
+        setUploadedDocs((prev) => [docWithTags, ...prev]);
+        setSelectedVaultDoc(docWithTags);
         setOcrDocName("");
         setOcrText("");
 
         // Sync with Cloud Firestore
         try {
-          await setDoc(doc(db, "documents", resData.document.id), resData.document);
+          await setDoc(doc(db, "documents", docWithTags.id), docWithTags);
         } catch (dbErr) {
           console.warn("Could not sync uploaded document with Cloud Firestore", dbErr);
         }
@@ -1146,9 +1245,13 @@ export default function App() {
         fetchSystemLogs();
       }
     } catch (err) {
+      clearInterval(progressInterval);
       showToast("Document ingestion error. Scan failed.");
     } finally {
+      clearInterval(progressInterval);
       setVaultLoading(false);
+      // Wait another moment to clear progress bar so user feels the completion
+      setTimeout(() => setUploadProgress(0), 1000);
     }
   };
 
@@ -1849,7 +1952,41 @@ This power is durable and persists through any subsequent incapacity.`;
           {/* 1. Sovereign Jurisdictions Deep-dive Directory */}
           {activeTab === "directory" && (
             <div className="space-y-6 animate-fadeIn">
-                <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl">
+              
+              {/* Mode Switcher */}
+              <div className="flex gap-2 border-b border-slate-800 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setDirectoryMode("static")}
+                  className={`py-2 px-4 rounded-lg text-xs font-bold transition-all ${
+                    directoryMode === "static"
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/50"
+                      : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🌍 Standard Mapped Countries
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectoryMode("europe_firestore")}
+                  className={`relative py-2 px-4 rounded-lg text-xs font-bold transition-all ${
+                    directoryMode === "europe_firestore"
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/50"
+                      : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🇪🇺 Europe Core (Firestore Cloud Col)
+                  <span className="absolute -top-1.5 -right-1 bg-pink-600 text-white text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full scale-90 shadow-md">
+                    Live
+                  </span>
+                </button>
+              </div>
+
+              {directoryMode === "europe_firestore" ? (
+                <EuropeJurisdictionsPanel currentUser={currentUser} showToast={showToast} />
+              ) : (
+                <>
+                  <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
                       <h2 className="text-xl font-bold flex items-center gap-2 text-white">
@@ -2248,8 +2385,10 @@ This power is durable and persists through any subsequent incapacity.`;
                   </table>
                 </div>
               </div>
-            </div>
+            </>
           )}
+        </div>
+      )}
 
           {/* 2. AI Co-Counsel Intelligent Console */}
           {activeTab === "counsel" && (
@@ -2574,32 +2713,133 @@ This power is durable and persists through any subsequent incapacity.`;
                         </button>
                       </form>
 
+                      {/* Smooth Progress Bar */}
+                      {uploadProgress > 0 && (
+                        <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg space-y-2 animate-fadeIn shadow-inner">
+                          <div className="flex justify-between items-center text-[10px] font-bold font-mono">
+                            <span className="text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                              {uploadProgress === 100 ? "Sync Completed!" : "OCR Ingesting & Encrypting..."}
+                            </span>
+                            <span className="text-slate-400 font-mono font-black">{uploadProgress}%</span>
+                          </div>
+                          
+                          <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                            <div 
+                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-150 ease-out rounded-full shadow-lg"
+                              style={{ width: `${uploadProgress}%` }}
+                            ></div>
+                          </div>
+                          <p className="text-[9px] text-slate-500 font-mono italic leading-none pt-0.5">
+                            Processing document matrices in-place offline & uploading to Google Cloud...
+                          </p>
+                        </div>
+                      )}
+
                       {/* List of files in Vault */}
                       <div className="space-y-2">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Available Secure Documents</span>
-                        {uploadedDocs.map((doc) => (
-                          <div
-                            key={doc.id}
-                            onClick={() => {
-                              setSelectedVaultDoc(doc);
-                              setVaultViewMode("details");
-                            }}
-                            className={`p-3 bg-slate-900 border rounded-lg cursor-pointer transition-all flex items-center gap-3 ${
-                              selectedVaultDoc?.id === doc.id ? "border-indigo-500 ring-1 ring-indigo-500" : "border-slate-800 hover:border-slate-700"
-                            }`}
-                          >
-                            <FileText className={`w-5 h-5 ${doc.riskScore > 50 ? "text-red-400" : "text-emerald-400"}`} />
-                            <div className="flex-1 overflow-hidden">
-                              <p className="text-xs font-bold text-white truncate">{doc.name}</p>
-                              <p className="text-[10px] text-slate-400">{doc.category} · {doc.size}</p>
-                            </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                              doc.riskScore > 50 ? "bg-red-950 text-red-300 border border-red-900" : "bg-emerald-950 text-emerald-300 border border-emerald-900"
-                            }`}>
-                              Risk: {doc.riskScore}
-                            </span>
-                          </div>
-                        ))}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Available Secure Documents</span>
+                          <span className="text-[9px] font-mono font-bold text-indigo-400 bg-indigo-950/40 px-1.5 py-0.2 rounded border border-indigo-900/30">
+                            {uploadedDocs.filter((doc) => {
+                              if (!docSearchQuery.trim()) return true;
+                              const q = docSearchQuery.toLowerCase();
+                              return (
+                                doc.name.toLowerCase().includes(q) ||
+                                doc.category.toLowerCase().includes(q) ||
+                                (doc.tags || []).some(t => t.toLowerCase().includes(q))
+                              );
+                            }).length} of {uploadedDocs.length}
+                          </span>
+                        </div>
+
+                        {/* Search and Retrieval bar */}
+                        <div className="relative mt-1 mb-2">
+                          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={docSearchQuery}
+                            onChange={(e) => setDocSearchQuery(e.target.value)}
+                            placeholder="Type to filter by tags, names, categories..."
+                            className="w-full bg-slate-900 text-xs text-slate-300 placeholder-slate-600 pl-8 pr-3 py-2 border border-slate-800 hover:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          {docSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setDocSearchQuery("")}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-indigo-400 hover:text-indigo-300 font-bold"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                          {uploadedDocs.filter((doc) => {
+                            if (!docSearchQuery.trim()) return true;
+                            const q = docSearchQuery.toLowerCase();
+                            return (
+                              doc.name.toLowerCase().includes(q) ||
+                              doc.category.toLowerCase().includes(q) ||
+                              (doc.tags || []).some(t => t.toLowerCase().includes(q))
+                            );
+                          }).length === 0 ? (
+                            <p className="text-[11px] text-slate-500 italic py-6 text-center">No agreements match your search criteria.</p>
+                          ) : (
+                            uploadedDocs.filter((doc) => {
+                              if (!docSearchQuery.trim()) return true;
+                              const q = docSearchQuery.toLowerCase();
+                              return (
+                                doc.name.toLowerCase().includes(q) ||
+                                doc.category.toLowerCase().includes(q) ||
+                                (doc.tags || []).some(t => t.toLowerCase().includes(q))
+                              );
+                            }).map((doc) => (
+                              <motion.div
+                                key={doc.id}
+                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                transition={{ duration: 0.35, ease: "easeOut" }}
+                                layout
+                                onClick={() => {
+                                  setSelectedVaultDoc(doc);
+                                  setVaultViewMode("details");
+                                }}
+                                className={`p-3 bg-slate-900 border rounded-lg cursor-pointer transition-all flex flex-col gap-2.5 ${
+                                  selectedVaultDoc?.id === doc.id ? "border-indigo-500 ring-1 ring-indigo-500" : "border-slate-800 hover:border-slate-700"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <FileText className={`w-5 h-5 ${doc.riskScore > 50 ? "text-red-400" : "text-emerald-400"}`} />
+                                  <div className="flex-1 overflow-hidden">
+                                    <p className="text-xs font-bold text-white truncate">{doc.name}</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">{doc.category} · {doc.size}</p>
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                    doc.riskScore > 50 ? "bg-red-950 text-red-300 border border-red-900" : "bg-emerald-950 text-emerald-300 border border-emerald-900"
+                                  }`}>
+                                    Risk: {doc.riskScore}
+                                  </span>
+                                </div>
+
+                                {/* Tag capsules block */}
+                                {doc.tags && doc.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 border-t border-slate-800/40 pt-1.5">
+                                    {doc.tags.map((tag, tagIndex) => (
+                                      <span
+                                        key={tagIndex}
+                                        className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-950/40 border border-indigo-900/30 text-indigo-300 flex items-center"
+                                        title={`Filtered tag: ${tag}`}
+                                      >
+                                        #{tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </motion.div>
+                            ))
+                          )}
+                        </div>
                       </div>
                     </motion.div>
                   )}
@@ -2657,6 +2897,57 @@ This power is durable and persists through any subsequent incapacity.`;
                               }`}>
                                 {selectedVaultDoc.riskScore}%
                               </div>
+                            </div>
+                          </div>
+
+                          {/* Categorization & User Tagging Widget */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-md">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-1.5 text-indigo-400 mb-2">
+                                <Tags className="w-4 h-4 text-indigo-400" />
+                                <span className="text-[10px] font-black uppercase tracking-wider font-sans">Document Categorization & Tags</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 min-h-[26px]">
+                                {(selectedVaultDoc.tags || []).length === 0 ? (
+                                  <span className="text-xs text-slate-500 italic">No custom search tags added yet. Use the field to categorize under tags like "urgent", "reviewed", "drafted".</span>
+                                ) : (
+                                  (selectedVaultDoc.tags || []).map((t, index) => (
+                                    <span key={index} className="flex items-center gap-1 bg-indigo-950/80 hover:bg-slate-900 text-indigo-300 hover:text-indigo-200 px-2.5 py-0.5 rounded-full border border-indigo-900/60 font-mono text-[10px] transition-all">
+                                      <span>#{t}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveTag(selectedVaultDoc.id, t)}
+                                        className="text-indigo-400 hover:text-red-400 font-extrabold ml-1 text-xs focus:outline-none"
+                                        title="Remove tag"
+                                      >
+                                        &times;
+                                      </button>
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 self-start sm:self-center w-full sm:w-auto">
+                              <input
+                                type="text"
+                                value={tagInput}
+                                onChange={(e) => setTagInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    handleAddTag(selectedVaultDoc.id);
+                                  }
+                                }}
+                                placeholder="Add custom tag..."
+                                className="bg-slate-950 border border-slate-700/80 hover:border-slate-600 rounded-md px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 flex-1 sm:flex-initial"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleAddTag(selectedVaultDoc.id)}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-[10px] uppercase tracking-wider px-3.5 py-2 rounded-md transition-all whitespace-nowrap"
+                              >
+                                Add Tag
+                              </button>
                             </div>
                           </div>
 

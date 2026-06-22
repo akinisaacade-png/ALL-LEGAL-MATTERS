@@ -63,6 +63,7 @@ export interface LegalDocument {
   clauses?: LegalClause[];
   suggestedRedlines?: RedlineSuggestion[];
   versions?: DocumentVersion[];
+  tags?: string[];
 }
 
 export interface ChatMessage {
