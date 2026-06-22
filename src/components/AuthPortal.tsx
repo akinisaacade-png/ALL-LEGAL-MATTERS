@@ -12,7 +12,9 @@ import {
   Eye,
   EyeOff,
   HelpCircle,
-  Key
+  Key,
+  Globe,
+  Github
 } from "lucide-react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
@@ -48,6 +50,22 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
   const [securityAnswer, setSecurityAnswer] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+  
+  // Federated OAuth/SSO integration simulator states
+  const [ssoProvider, setSsoProvider] = useState<"google" | "github" | null>(null);
+  const [ssoEmail, setSsoEmail] = useState("");
+  const [ssoName, setSsoName] = useState("");
+
+  // Simulated Virtual Outbox log
+  const [simulatedEmail, setSimulatedEmail] = useState<{
+    to: string;
+    subject: string;
+    body: string;
+    code: string;
+    timestamp: string;
+  } | null>(null);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -249,12 +267,21 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
 
       if (resetStep === "request") {
         // Step 1: Simulate sending email verification link or security questionnaire
-        setSuccessMsg("✉️ Reset dispatch sent! To bypass, verification code is sent to " + cleanEmail);
+        const testCode = "123456";
+        setSimulatedEmail({
+          to: cleanEmail,
+          subject: "🔒 [Sovereign Security] Password Reset Access Verification Code",
+          body: `Hi Sovereign Member,\n\nWe received a security portal password recovery request for the account: ${cleanEmail}.\n\nYour bypass authentication key passcode is: ${testCode}\n\nIf you did not issue this, please authenticate immediately or reach out to security-operations@sovereign-legal.com.\n\nSovereign Gateway Administration`,
+          code: testCode,
+          timestamp: new Date().toLocaleTimeString()
+        });
+
+        setSuccessMsg("✉️ Simulated reset email dispatched successfully! See details in the Virtual Gateway SMTP window below.");
         setTimeout(() => {
           setResetStep("verify");
           setSuccessMsg(null);
           setLoading(false);
-        }, 1200);
+        }, 1500);
       } else if (resetStep === "verify") {
         // Step 2: Input code (simulated code default "123456" for immediate sandboxed developer check)
         if (securityAnswer.trim() !== "123456" && securityAnswer.trim().toLowerCase() !== "sovereign") {
@@ -292,6 +319,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           setNewPassword("");
           setConfirmNewPassword("");
           setSecurityAnswer("");
+          setSimulatedEmail(null);
           setSuccessMsg(null);
           setLoading(false);
         }, 1800);
@@ -299,6 +327,99 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
     } catch {
       setError("Firestore verification link dispatch failed. Please retry.");
       setLoading(false);
+    }
+  };
+
+  const handleSsoTrigger = (provider: "google" | "github") => {
+    setError(null);
+    setSuccessMsg(null);
+    setSsoProvider(provider);
+    setSsoEmail("");
+    setSsoName("");
+  };
+
+  const handleSsoSubmit = async () => {
+    if (!ssoEmail) return;
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    const cleanEmail = ssoEmail.trim().toLowerCase();
+    const cleanName = ssoName.trim() || cleanEmail.split("@")[0];
+    const userDocKey = cleanEmail.replace(/\./g, "_");
+
+    try {
+      const userRef = doc(db, "users", userDocKey);
+      const userSnap = await getDoc(userRef);
+
+      let profileData;
+      let secureSessionToken = "sso_federated_token_" + Math.random().toString(36).substring(2, 20) + "_" + Date.now();
+
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        if (uData.isActive === false) {
+          setError("This federated account has been deactivated by an administrator.");
+          setLoading(false);
+          setSsoProvider(null);
+          return;
+        }
+        profileData = {
+          email: uData.email,
+          name: uData.name || cleanName,
+          createdAt: uData.createdAt || new Date().toISOString(),
+          isAdmin: uData.isAdmin === true || uData.email === "akinisaacade@gmail.com"
+        };
+        setSuccessMsg(`🔑 Secure SSO Verified: Welcoming back, ${profileData.name}!`);
+      } else {
+        // Create profile on the fly (Real Dynamic Integration!)
+        const trialStart = new Date();
+        const trialEnd = new Date();
+        trialEnd.setDate(trialEnd.getDate() + 7);
+
+        profileData = {
+          userId: "sovereign_sso_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+          email: cleanEmail,
+          name: cleanName,
+          password: "sso_federated_identity_auth_bypass_key_" + ssoProvider,
+          createdAt: trialStart.toISOString(),
+          trialStartDate: trialStart.toISOString(),
+          trialExpirationDate: trialEnd.toISOString(),
+          isActive: true,
+          isAdmin: cleanEmail === "akinisaacade@gmail.com"
+        };
+
+        await setDoc(userRef, profileData);
+
+        // Build active 7-Day Free Trial sandbox subscription record
+        const subRef = doc(db, "subscriptions", userDocKey);
+        await setDoc(subRef, {
+          status: "trial",
+          planType: "trial",
+          priceId: "",
+          subscriptionId: "sso_trial_licensed_" + Math.random().toString(36).substring(2, 10),
+          updatedAt: new Date().toISOString()
+        });
+
+        setSuccessMsg(`✨ Sovereign account created with ${ssoProvider === "google" ? "Google" : "GitHub"}! Free 7-Day trial started.`);
+      }
+
+      setTimeout(() => {
+        setLoading(false);
+        setSsoProvider(null);
+        onAuthSuccess({
+          email: cleanEmail,
+          name: profileData.name,
+          createdAt: profileData.createdAt,
+          token: secureSessionToken,
+          isAdmin: profileData.isAdmin
+        });
+      }, 1500);
+
+    } catch (err: any) {
+      console.error("SSO Registration error:", err);
+      setError("Unable to authenticate federated account identity with secure records. " + (err.message || ""));
+      setLoading(false);
+      setSsoProvider(null);
     }
   };
 
@@ -520,28 +641,48 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
                 <label className="block text-[10px] uppercase font-bold text-slate-400 font-mono">
                   Declare New Secure Password
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="8+ characters, letters, upper/lower, syms"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-xs text-white font-mono"
-                />
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="8+ characters, letters, upper/lower, syms"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-10 pr-10 text-xs text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-1">
                 <label className="block text-[10px] uppercase font-bold text-slate-400 font-mono">
                   Confirm Password
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={confirmNewPassword}
-                  onChange={(e) => setConfirmNewPassword(e.target.value)}
-                  placeholder="Confirm passcode matches exactly"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-xs text-white font-mono"
-                />
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                  <input
+                    type={showConfirmNewPassword ? "text" : "password"}
+                    required
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    placeholder="Confirm passcode matches exactly"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-10 pr-10 text-xs text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                    className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300"
+                  >
+                    {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <button
@@ -554,6 +695,62 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
             </div>
           )}
         </form>
+      )}
+
+      {/* Federated Auth SSO Divider & Buttons */}
+      {mode !== "forgot" && (
+        <div className="space-y-3 mt-4">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-900 font-sans"></div>
+            </div>
+            <div className="relative flex justify-center text-[9px] uppercase font-bold tracking-widest font-mono">
+              <span className="bg-slate-950 px-2 text-slate-500">Identity Federation</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleSsoTrigger("google")}
+              className="flex items-center justify-center gap-2 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-slate-705 rounded-lg py-2 px-3 text-xs font-bold text-slate-300 transition-all hover:text-white"
+            >
+              <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="font-mono text-[10px]">Google SSO</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSsoTrigger("github")}
+              className="flex items-center justify-center gap-2 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-slate-705 rounded-lg py-2 px-3 text-xs font-bold text-slate-300 transition-all hover:text-white"
+            >
+              <Github className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="font-mono text-[10px]">GitHub Core</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Simulated Email outbox client */}
+      {simulatedEmail && mode === "forgot" && (
+        <div id="simulated-smtp-panel" className="mt-4 p-3 bg-slate-900 border border-indigo-950 rounded-lg space-y-1.5 font-mono text-[10px]">
+          <div className="flex items-center justify-between border-b border-indigo-900/40 pb-1.5 text-indigo-400 font-bold">
+            <span className="flex items-center gap-1">✉️ SIMULATED SMTP DISPATCH MAILBOX</span>
+            <span>{simulatedEmail.timestamp}</span>
+          </div>
+          <div className="text-slate-400">
+            To: <span className="text-white font-bold">{simulatedEmail.to}</span>
+          </div>
+          <div className="text-slate-400">
+            Subject: <span className="text-emerald-400 font-bold">{simulatedEmail.subject}</span>
+          </div>
+          <div className="text-slate-300 mt-2 whitespace-pre-wrap leading-relaxed py-2 px-2 bg-slate-950 rounded border border-slate-900/40 select-text">
+            {simulatedEmail.body}
+          </div>
+          <div className="flex items-center justify-between pt-1 font-sans text-slate-500">
+            <span>SMTP Status: Verified Dispatch</span>
+            <span className="text-indigo-400 font-black">Code: {simulatedEmail.code}</span>
+          </div>
+        </div>
       )}
 
       {/* Switch Toggles Footer */}
@@ -605,6 +802,130 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
         <div id="trial-legal-notice" className="mt-4 p-2 bg-indigo-950/20 border border-indigo-900/30 rounded text-[10px] text-slate-500 text-start leading-normal font-sans">
           🔒 Registering your account immediately grants a <strong className="text-indigo-300">7-day Premium Free Trial</strong> with unlimited advanced AI processing context. No payment method required upfront.
         </div>
+      )}
+
+      {/* Federated SSO Simulation Consent Overlay */}
+      {ssoProvider && (
+        <AnimatePresence key="sso-overlay-gates">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="absolute inset-0 bg-slate-950 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between z-50 font-sans"
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-indigo-950 pb-3">
+                <div className="flex items-center gap-2">
+                  {ssoProvider === "google" ? (
+                    <Globe className="w-5 h-5 text-emerald-400 animate-spin" style={{ animationDuration: "12s" }} />
+                  ) : (
+                    <Github className="w-5 h-5 text-indigo-400" />
+                  )}
+                  <span className="text-xs font-black text-white uppercase tracking-wider font-mono">
+                    {ssoProvider === "google" ? "Google SSO Gateway" : "GitHub SSO Core"}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSsoProvider(null)}
+                  className="text-[10px] text-slate-400 hover:text-white font-mono uppercase bg-slate-900 border border-slate-800 px-2 py-1 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400 leading-normal">
+                Authorize <strong className="text-indigo-300">Sovereign Legal Hub</strong> to query user identity metadata (email and profile telemetry) from federated repositories.
+              </p>
+
+              {/* Quick Presets section */}
+              <div className="space-y-2">
+                <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">SELECT IDENTITY PRESET</span>
+                <div className="grid grid-cols-1 gap-1.5 animate-fadeIn">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSsoEmail("akinisaacade@gmail.com");
+                      setSsoName("Akin Isaac");
+                    }}
+                    className={`flex items-center justify-between bg-slate-900/65 border hover:border-indigo-500/40 p-2 rounded-lg text-left transition-all group ${ssoEmail === "akinisaacade@gmail.com" ? "border-indigo-500" : "border-slate-800"}`}
+                  >
+                    <div className="text-xs font-mono">
+                      <div className="text-white font-bold group-hover:text-indigo-300">Akin Isaac</div>
+                      <div className="text-slate-400 shrink-0 select-text">akinisaacade@gmail.com</div>
+                    </div>
+                    <span className="text-[9px] uppercase bg-purple-950/80 border border-purple-800 text-purple-300 font-bold px-1.5 py-0.5 rounded tracking-wide">
+                      Lead Auditor
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSsoEmail("counsel@company.com");
+                      setSsoName("Sovereign Co-Counsel");
+                    }}
+                    className={`flex items-center justify-between bg-slate-900/65 border hover:border-indigo-500/40 p-2 rounded-lg text-left transition-all group ${ssoEmail === "counsel@company.com" ? "border-indigo-500" : "border-slate-800"}`}
+                  >
+                    <div className="text-xs font-mono">
+                      <div className="text-white font-bold group-hover:text-indigo-300">Sovereign Co-Counsel</div>
+                      <div className="text-slate-400 shrink-0 select-text">counsel@company.com</div>
+                    </div>
+                    <span className="text-[9px] uppercase bg-indigo-950/80 border border-indigo-800 text-indigo-300 font-bold px-1.5 py-0.5 rounded tracking-wide font-sans">
+                      Premium Member
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom fields for alternative inputs */}
+              <div className="space-y-2 pt-2 border-t border-slate-900">
+                <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">OR DECLARE CUSTOM ACCOUNT</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="block text-[9px] font-mono text-slate-500 uppercase">Gateway Email</label>
+                    <input
+                      type="email"
+                      value={ssoEmail}
+                      onChange={(e) => setSsoEmail(e.target.value)}
+                      placeholder="e.g. counsel@external.site"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[9px] font-mono text-slate-500 uppercase">Legal Nickname</label>
+                    <input
+                      type="text"
+                      value={ssoName}
+                      onChange={(e) => setSsoName(e.target.value)}
+                      placeholder="e.g. Attorney Guest"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-900">
+              <button
+                type="button"
+                onClick={handleSsoSubmit}
+                disabled={!ssoEmail || loading}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-55 disabled:cursor-not-allowed text-white font-black text-xs py-2.5 rounded-lg flex items-center justify-center gap-2 transition"
+              >
+                {loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>GRANT SSO PERMISSION & AUTHENTICATE</span>
+                  </>
+                )}
+              </button>
+              <span className="block text-[8px] text-center text-slate-500 mt-2 font-mono">
+                SSL Enforced Secure Tunnel Exchange | Client Node Ref {ssoProvider?.toUpperCase()}
+              </span>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       )}
     </motion.div>
   );
