@@ -41,6 +41,7 @@ import {
   History,
   CreditCard,
   Award,
+  Shield,
 } from "lucide-react";
 import { JURISDICTIONS_DATA, MOCH_ATTORNEYS, LEGAL_DOMAINS } from "./data";
 import { SovereignJurisdiction, LegalDocument, ConsultationBooking, ChatMessage, Attorney, DocumentVersion } from "./types";
@@ -49,6 +50,7 @@ import { collection, doc, getDocs, setDoc, deleteDoc, getDoc } from "firebase/fi
 import { db } from "./firebase";
 import ComplianceDashboard from "./components/ComplianceDashboard";
 import AuthPortal from "./components/AuthPortal";
+import AdminConsole from "./components/AdminConsole";
 import { scanDocumentCompliance, ComplianceAlert } from "./complianceEngine";
 
 interface SystemLogMsg {
@@ -59,13 +61,15 @@ interface SystemLogMsg {
 
 export default function App() {
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<"directory" | "counsel" | "vault" | "compliance" | "forms" | "consultations" | "multimodal" | "maintenance" | "translation" | "billing" | "auth">("directory");
+  const [activeTab, setActiveTab] = useState<"directory" | "counsel" | "vault" | "compliance" | "forms" | "consultations" | "multimodal" | "maintenance" | "translation" | "billing" | "auth" | "admin">("directory");
 
   // Dynamic Public Accounts Auth States
   const [currentUser, setCurrentUser] = useState<{
     email: string;
     name: string;
     createdAt: string;
+    token?: string;
+    isAdmin?: boolean;
   } | null>(() => {
     try {
       const saved = localStorage.getItem("sovereign_current_user");
@@ -435,10 +439,25 @@ export default function App() {
     if (subLoaded && trialLoaded) {
       if (!isPremiumOrTrialActive) {
         setActiveTab("billing");
-        showToast("⚠️ Your 7-day free trial has expired. Directing to Membership page to reactive Premium AI services.");
+        if (currentUser && !effectiveTrialStatus.isTrialActive) {
+          showToast("Your 7-Day Free Trial has expired. Please subscribe to continue using the app.");
+        } else {
+          showToast("An active subscription is required to access premium AI-powered features.");
+        }
       }
     }
-  }, [subLoaded, trialLoaded, isPremiumOrTrialActive]);
+  }, [subLoaded, trialLoaded, isPremiumOrTrialActive, currentUser, effectiveTrialStatus.isTrialActive]);
+
+  const checkPremiumFeatureAccess = (): boolean => {
+    if (isPremiumOrTrialActive) return true;
+    setActiveTab("billing");
+    if (currentUser && !effectiveTrialStatus.isTrialActive) {
+      showToast("Your 7-Day Free Trial has expired. Please subscribe to continue using the app.");
+    } else {
+      showToast("An active subscription is required to access premium AI-powered features.");
+    }
+    return false;
+  };
 
   const fetchSubscription = async () => {
     const userEmail = currentUser?.email || "akinisaacade@gmail.com";
@@ -489,7 +508,18 @@ export default function App() {
       const userSnap = await getDoc(userRef);
       let profileData;
       if (userSnap.exists()) {
-        profileData = userSnap.data() as { email: string; createdAt: string; name?: string };
+        const uData = userSnap.data();
+        if (uData.isActive === false) {
+          showToast("⚠️ This account has been deactivated by an administrator.");
+          setCurrentUser(null);
+          localStorage.removeItem("sovereign_current_user");
+          setSubscription(null);
+          setTrialStatus({ isTrialActive: false, daysRemaining: 0, daysTotal: 7 });
+          setActiveTab("auth");
+          setAuthView("signin");
+          return;
+        }
+        profileData = uData as { email: string; createdAt: string; name?: string };
       } else {
         // Newly registered user or system fallback! Create profile with 7-day free trial if we have active user
         if (!currentUser) {
@@ -704,9 +734,7 @@ export default function App() {
     if (e) e.preventDefault();
     if (!chatMessage.trim()) return;
 
-    if (!isPremiumOrTrialActive) {
-      setActiveTab("billing");
-      showToast("⚠️ Premium membership required: Please select a plan to activate AI co-counseling threads.");
+    if (!checkPremiumFeatureAccess()) {
       return;
     }
 
@@ -1085,9 +1113,7 @@ export default function App() {
       return;
     }
 
-    if (!isPremiumOrTrialActive) {
-      setActiveTab("billing");
-      showToast("⚠️ Premium membership required: Please select a plan to activate AI contract OCR audits.");
+    if (!checkPremiumFeatureAccess()) {
       return;
     }
 
@@ -1229,9 +1255,7 @@ export default function App() {
       return;
     }
 
-    if (!isPremiumOrTrialActive) {
-      setActiveTab("billing");
-      showToast("⚠️ Premium membership required: Please select a plan to activate Custom AI Text-to-Speech synthesis.");
+    if (!checkPremiumFeatureAccess()) {
       return;
     }
 
@@ -1266,9 +1290,7 @@ export default function App() {
 
   // Voice Transcribe Action
   const handlePrebuiltVoiceRecording = async () => {
-    if (!isPremiumOrTrialActive) {
-      setActiveTab("billing");
-      showToast("⚠️ Premium membership required: Please select a plan to activate AI Voice-to-Text transcription.");
+    if (!checkPremiumFeatureAccess()) {
       return;
     }
 
@@ -1305,9 +1327,7 @@ export default function App() {
       return;
     }
 
-    if (!isPremiumOrTrialActive) {
-      setActiveTab("billing");
-      showToast("⚠️ Premium membership required: Please select a plan to activate Veo Generative Video briefs.");
+    if (!checkPremiumFeatureAccess()) {
       return;
     }
 
@@ -1344,9 +1364,7 @@ export default function App() {
       return;
     }
 
-    if (!isPremiumOrTrialActive) {
-      setActiveTab("billing");
-      showToast("⚠️ Premium membership required: Please select a plan to activate Gemini Legal Translation.");
+    if (!checkPremiumFeatureAccess()) {
       return;
     }
 
@@ -1670,9 +1688,7 @@ This power is durable and persists through any subsequent incapacity.`;
           <button
             id="tab-btn-counsel"
             onClick={() => {
-              if (!isPremiumOrTrialActive) {
-                setActiveTab("billing");
-                showToast("⚠️ Subscription required: AI Co-Counsel features are reserved for active trial or Premium subscribers.");
+              if (!checkPremiumFeatureAccess()) {
                 return;
               }
               setActiveTab("counsel");
@@ -1736,9 +1752,7 @@ This power is durable and persists through any subsequent incapacity.`;
           <button
             id="tab-btn-multimodal"
             onClick={() => {
-              if (!isPremiumOrTrialActive) {
-                setActiveTab("billing");
-                showToast("⚠️ Subscription required: AI Multimodal operations are reserved for active trial or Premium subscribers.");
+              if (!checkPremiumFeatureAccess()) {
                 return;
               }
               setActiveTab("multimodal");
@@ -1754,9 +1768,7 @@ This power is durable and persists through any subsequent incapacity.`;
           <button
             id="tab-btn-translation"
             onClick={() => {
-              if (!isPremiumOrTrialActive) {
-                setActiveTab("billing");
-                showToast("⚠️ Subscription required: AI Legal Translations are reserved for active trial or Premium subscribers.");
+              if (!checkPremiumFeatureAccess()) {
                 return;
               }
               setActiveTab("translation");
@@ -1782,6 +1794,19 @@ This power is durable and persists through any subsequent incapacity.`;
             <UserCheck className="w-4 h-4 text-teal-400" />
             <span>{currentUser ? "User Identity" : "Sign Up / Join"}</span>
           </button>
+
+          {(currentUser?.isAdmin || currentUser?.email === "akinisaacade@gmail.com") && (
+            <button
+              id="tab-btn-admin"
+              onClick={() => setActiveTab("admin")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
+                activeTab === "admin" ? "bg-purple-600/90 text-white border-b-2 border-purple-400" : "bg-slate-800 text-purple-300 hover:bg-slate-700"
+              }`}
+            >
+              <Shield className="w-4 h-4 text-purple-400" />
+              <span>Admin Console</span>
+            </button>
+          )}
 
           <button
             id="tab-btn-billing"
@@ -4791,6 +4816,12 @@ This power is durable and persists through any subsequent incapacity.`;
                 initialMode={authView}
                 onClose={() => setActiveTab("directory")}
               />
+            </div>
+          )}
+
+          {activeTab === "admin" && (currentUser?.isAdmin || currentUser?.email === "akinisaacade@gmail.com") && (
+            <div id="admin-panel" className="max-w-7xl mx-auto py-6 px-4">
+              <AdminConsole currentUser={currentUser} showToast={showToast} />
             </div>
           )}
 

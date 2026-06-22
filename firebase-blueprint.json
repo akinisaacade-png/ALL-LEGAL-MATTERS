@@ -38,6 +38,36 @@
         "read": "true",
         "write": "true"
       }
+    },
+    "users": {
+      "fields": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "password": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "isAdmin": { "type": "boolean" },
+        "userId": { "type": "string" },
+        "trialStartDate": { "type": "string" },
+        "trialExpirationDate": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "subscriptions": {
+      "fields": {
+        "status": { "type": "string" },
+        "planType": { "type": "string" },
+        "priceId": { "type": "string" },
+        "subscriptionId": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
     }
   }
 }
