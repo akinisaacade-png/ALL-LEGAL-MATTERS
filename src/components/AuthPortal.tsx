@@ -147,7 +147,10 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           userId: uniqueUserId,
           email: cleanEmail,
           name: cleanName,
+          fullName: cleanName, // aligns with Mongoose schema
           password: hashedPassword, // encrypted hash (Requirement 9)
+          subscriptionStatus: "trial", // aligns with Mongoose schema
+          trialEndDate: trialEnd.toISOString(), // aligns with Mongoose schema
           createdAt: trialStart.toISOString(),
           trialStartDate: trialStart.toISOString(),
           trialExpirationDate: trialEnd.toISOString(),
@@ -380,7 +383,10 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           userId: "sovereign_sso_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
           email: cleanEmail,
           name: cleanName,
+          fullName: cleanName, // aligns with Mongoose schema
           password: "sso_federated_identity_auth_bypass_key_" + ssoProvider,
+          subscriptionStatus: "trial", // aligns with Mongoose schema
+          trialEndDate: trialEnd.toISOString(), // aligns with Mongoose schema
           createdAt: trialStart.toISOString(),
           trialStartDate: trialStart.toISOString(),
           trialExpirationDate: trialEnd.toISOString(),

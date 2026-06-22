@@ -4,6 +4,10 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import Stripe from "stripe";
+import mongoose from "mongoose";
+import bcrypt from "bcrypt";
+import UserImport from "./src/models/User.js";
+const User = UserImport as any;
 
 dotenv.config();
 
@@ -129,7 +133,8 @@ const database = {
     { timestamp: new Date().toISOString(), event: "System Initialized", status: "SUCCESS" },
     { timestamp: new Date().toISOString(), event: "Memory Database Mounted", status: "SUCCESS" }
   ],
-  subscriptions: [] as { email: string; subscriptionId: string; status: string; priceId: string; currentPeriodEnd?: string }[]
+  subscriptions: [] as { email: string; subscriptionId: string; status: string; priceId: string; currentPeriodEnd?: string }[],
+  mongooseUsers: [] as any[]
 };
 
 // --- API ENDPOINTS ---
@@ -1088,6 +1093,288 @@ app.get("/api/stripe/subscription", (req, res) => {
 // System logs hook
 app.get("/api/system/logs", (req, res) => {
   res.json({ status: "ok", logs: database.systemLogs });
+});
+
+// --- MONGOOSE USER DATABASE INTEGRATION ROUTER ---
+
+// Flag indicating MongoDB actual connectivity status
+let isMongoConnected = false;
+
+// Graceful database connector for live deployments of Mongoose
+const connectMongooseDb = async () => {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    console.log("ℹ️ MONGODB_URI is not provided in environment. User database initialized in Sandbox validation mode.");
+    return;
+  }
+  try {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(uri);
+      isMongoConnected = true;
+      console.log("🎉 Successfully connected to MongoDB via Mongoose!");
+      database.systemLogs.push({
+        timestamp: new Date().toISOString(),
+        event: "Successfully connected to MongoDB via Mongoose User schema",
+        status: "SUCCESS"
+      });
+    }
+  } catch (err: any) {
+    console.error("⚠️ Mongoose connection failed. Falling back to sandbox simulator:", err.message);
+    database.systemLogs.push({
+      timestamp: new Date().toISOString(),
+      event: `Mongoose database connection failure: ${err.message}`,
+      status: "WARNING"
+    });
+  }
+};
+
+connectMongooseDb();
+
+// 1. Validate custom user payload directly against the live Mongoose Schema file
+app.post("/api/mongoose/users/validate", async (req, res) => {
+  try {
+    const payload = req.body;
+    
+    // Instantiate schema document locally to trigger validations
+    const userInstance = new User(payload);
+    
+    // Mongoose validation executes all schema rules (required, types, trimmed, enum bounds, etc.)
+    const validationError = userInstance.validateSync();
+    
+    if (validationError) {
+      const formattedErrors = Object.keys(validationError.errors).map(key => ({
+        field: key,
+        message: validationError.errors[key].message,
+        kind: validationError.errors[key].kind
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        error: "Mongoose Schema Compliance Validation Failed",
+        errors: formattedErrors
+      });
+    }
+    
+    return res.json({
+      success: true,
+      valid: true,
+      message: "Satisfies all Mongoose schema integrity rules!",
+      attributes: {
+        fullName: userInstance.fullName,
+        email: userInstance.email,
+        subscriptionStatus: userInstance.subscriptionStatus,
+        trialEndDate: userInstance.trialEndDate
+      }
+    });
+
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: "Mongoose Engine validator runtime error",
+      details: err.message
+    });
+  }
+});
+
+// 2. Register/Create a user profile conforming with Mongoose structure
+app.post("/api/mongoose/users", async (req, res) => {
+  try {
+    const payload = req.body;
+    const userDoc = new User(payload);
+    
+    // Run schema validation
+    const validationErr = userDoc.validateSync();
+    if (validationErr) {
+      return res.status(400).json({
+        success: false,
+        error: "Schema validation failed",
+        errors: Object.keys(validationErr.errors).map(key => ({
+          field: key,
+          message: validationErr.errors[key].message
+        }))
+      });
+    }
+    
+    let savedDoc: any = null;
+    if (isMongoConnected) {
+      // Check if user already exists
+      const existing = await User.findOne({ email: userDoc.email.toLowerCase() });
+      if (existing) {
+        return res.status(409).json({ success: false, error: "A user with this email is already registered." });
+      }
+      savedDoc = await userDoc.save();
+    } else {
+      // Simulate unique index check in memory
+      const existing = database.mongooseUsers.find(u => u.email.toLowerCase() === userDoc.email.toLowerCase());
+      if (existing) {
+        return res.status(409).json({ success: false, error: "A user with this email is already registered." });
+      }
+      
+      savedDoc = userDoc.toObject();
+      if (!savedDoc._id) {
+        savedDoc._id = new mongoose.Types.ObjectId().toString();
+      }
+      savedDoc.createdAt = new Date().toISOString();
+      savedDoc.updatedAt = new Date().toISOString();
+      
+      database.mongooseUsers.push(savedDoc);
+    }
+    
+    database.systemLogs.push({
+      timestamp: new Date().toISOString(),
+      event: `Mongoose user record created: ${userDoc.email} (${userDoc.subscriptionStatus})`,
+      status: "SUCCESS"
+    });
+    
+    // Add dynamically to general system logs for visibility
+    const userDocKey = "user_details_" + userDoc.email.replace(/\./g, "_");
+    database.subscriptions.push({
+      email: userDoc.email,
+      subscriptionId: "mongoose_integrated_" + Math.random().toString(36).substring(2, 9),
+      status: userDoc.subscriptionStatus,
+      priceId: userDoc.subscriptionStatus === "active" ? "price_monthly" : "",
+      currentPeriodEnd: userDoc.trialEndDate ? new Date(userDoc.trialEndDate).toISOString() : undefined
+    });
+    
+    return res.status(201).json({
+      success: true,
+      message: isMongoConnected ? "User saved to MongoDB" : "User saved to memory database (validated via Mongoose schema)",
+      user: savedDoc
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to persist user profile",
+      details: err.message
+    });
+  }
+});
+
+// --- CUSTOM SECURE REGISTER ENDPOINT WITH BCRYPT PARSING AND MONGOOSE PERSISTENCE ---
+const SALT_ROUNDS = 12;
+
+const handleRegistration = async (req: any, res: any) => {
+  try {
+    const { fullName, email, password } = req.body;
+
+    // 1. Input Validation
+    if (!fullName || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    // Simple email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+    }
+
+    const lowerEmail = email.toLowerCase();
+
+    // 2. Check if user already exists
+    let existingUser = null;
+    if (isMongoConnected) {
+      existingUser = await User.findOne({ email: lowerEmail });
+    } else {
+      existingUser = database.mongooseUsers.find((u: any) => u.email.toLowerCase() === lowerEmail);
+    }
+
+    if (existingUser) {
+      // Generic message to prevent user enumeration security risks
+      return res.status(409).json({ error: 'Registration failed. Email already in use.' });
+    }
+
+    // 3. Hash the password securely
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+    // 4. Save the user (Defaulting to Trial status via Schema)
+    const newUser = new User({
+      fullName,
+      email: lowerEmail,
+      password: hashedPassword
+    });
+
+    let savedUser: any = null;
+    if (isMongoConnected) {
+      savedUser = await newUser.save();
+    } else {
+      // Schema validation check manually
+      const validationErr = newUser.validateSync();
+      if (validationErr) {
+        return res.status(400).json({
+          error: "Schema validation failed",
+          details: Object.keys(validationErr.errors).map((key: string) => (validationErr.errors[key] as any).message)
+        });
+      }
+      savedUser = newUser.toObject();
+      if (!savedUser._id) {
+        savedUser._id = new mongoose.Types.ObjectId().toString();
+      }
+      savedUser.createdAt = new Date().toISOString();
+      savedUser.updatedAt = new Date().toISOString();
+      database.mongooseUsers.push(savedUser);
+    }
+
+    // Dynamic log update
+    database.systemLogs.push({
+      timestamp: new Date().toISOString(),
+      event: `Mongoose registered user created: ${lowerEmail}`,
+      status: "SUCCESS"
+    });
+
+    // Mirror subscription status for client state integration
+    database.subscriptions.push({
+      email: lowerEmail,
+      subscriptionId: "mongoose_registered_" + Math.random().toString(36).substring(2, 9),
+      status: savedUser.subscriptionStatus || "trial",
+      priceId: "",
+      currentPeriodEnd: savedUser.trialEndDate ? new Date(savedUser.trialEndDate).toISOString() : undefined
+    });
+
+    // 5. Respond with success (Do not return the password hash)
+    return res.status(201).json({
+      message: 'Registration successful! Your 7-day trial has started.',
+      user: {
+        id: savedUser._id,
+        fullName: savedUser.fullName,
+        email: savedUser.email,
+        subscriptionStatus: savedUser.subscriptionStatus,
+        trialEndDate: savedUser.trialEndDate
+      }
+    });
+
+  } catch (error) {
+    console.error('Registration Error:', error);
+    return res.status(500).json({ error: 'An internal server error occurred.' });
+  }
+};
+
+app.post('/register', handleRegistration);
+app.post('/api/register', handleRegistration);
+app.post('/api/mongoose/users/register', handleRegistration);
+
+// 3. Query all users stored via Mongoose schema
+app.get("/api/mongoose/users", async (req, res) => {
+  try {
+    let usersList = [];
+    if (isMongoConnected) {
+      usersList = await User.find({}).sort({ createdAt: -1 });
+    } else {
+      usersList = [...database.mongooseUsers].reverse();
+    }
+    res.json({
+      success: true,
+      count: usersList.length,
+      storage: isMongoConnected ? "MongoDB" : "Simulated Sandbox Memory List",
+      users: usersList
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: "Query failed", details: err.message });
+  }
 });
 
 // Port & Host listen handling

@@ -297,6 +297,7 @@ export default function App() {
 
   // Subscription Sandbox Override Tier (Sovereign Simulator)
   const [simulatedTier, setSimulatedTier] = useState<"real" | "trial" | "monthly" | "yearly" | "expired">("real");
+  const [billingSubTab, setBillingSubTab] = useState<"terminal" | "schema">("terminal");
 
   // Dynamically resolve subscription or trial state based on simulation selection
   const effectiveSubscription = React.useMemo(() => {
@@ -4853,245 +4854,442 @@ This power is durable and persists through any subsequent incapacity.`;
                 </div>
               </div>
 
-              {effectiveSubscription?.status === "active" ? (
-                /* --- ACTIVE PREMIUM VIEW --- */
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Glowing Active Membership Card */}
-                  <div className="md:col-span-2 bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-950 p-6 rounded-xl border border-emerald-500/30 shadow-lg shadow-emerald-950/20 space-y-6 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 bg-emerald-500 text-slate-900 font-sans font-black text-[10px] tracking-wider uppercase px-4 py-1 rounded-bl-xl shadow-md">
-                      ACTIVE MEMBER
+              {/* Sub-tab Navigation */}
+              <div className="flex border-b border-slate-850 gap-1 pt-1">
+                <button
+                  type="button"
+                  id="tab-billing-terminal"
+                  onClick={() => setBillingSubTab("terminal")}
+                  className={`px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider border-b-2 font-mono transition-all duration-150 flex items-center gap-2 ${
+                    billingSubTab === "terminal"
+                      ? "border-amber-400 text-amber-400 bg-amber-500/5"
+                      : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40"
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  Plans & Billing Terminal
+                </button>
+                <button
+                  type="button"
+                  id="tab-billing-schema"
+                  onClick={() => setBillingSubTab("schema")}
+                  className={`px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider border-b-2 font-mono transition-all duration-150 flex items-center gap-2 ${
+                    billingSubTab === "schema"
+                      ? "border-indigo-400 text-indigo-400 bg-indigo-500/5"
+                      : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40"
+                  }`}
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  Mongoose User Schema
+                </button>
+              </div>
+
+              {billingSubTab === "terminal" ? (
+                effectiveSubscription?.status === "active" ? (
+                  /* --- ACTIVE PREMIUM VIEW --- */
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fadeIn">
+                    {/* Glowing Active Membership Card */}
+                    <div className="md:col-span-2 bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-950 p-6 rounded-xl border border-emerald-500/30 shadow-lg shadow-emerald-950/20 space-y-6 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 bg-emerald-500 text-slate-900 font-sans font-black text-[10px] tracking-wider uppercase px-4 py-1 rounded-bl-xl shadow-md">
+                        ACTIVE MEMBER
+                      </div>
+                      
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20 text-emerald-400">
+                          <Award className="w-8 h-8" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-lg font-bold text-white">Sovereign Pro Counsel</h3>
+                          <p className="text-xs text-slate-400">Premium Subscription Plan</p>
+                          <div className="flex items-center gap-1.5 mt-2 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full w-max">
+                            <CheckCircle className="w-3.5 h-3.5" /> Synchronized with Stripe & Firestore Database
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-800 text-xs">
+                        <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
+                          <span className="text-slate-400 font-mono">Subscription Status</span>
+                          <p className="text-emerald-400 font-bold text-sm flex items-center gap-1.5 uppercase font-mono mt-1">
+                            ● Active / Paid
+                          </p>
+                        </div>
+                        <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
+                          <span className="text-slate-400 font-mono">Current Plan Tier</span>
+                          <p className="text-white font-bold text-sm uppercase mt-1">
+                            {effectiveSubscription.planType === "yearly" ? "Yearly License ($349/year)" : "Monthly Membership ($39/month)"}
+                          </p>
+                        </div>
+                        <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
+                          <span className="text-slate-400 font-mono">Subscriber Email</span>
+                          <p className="text-indigo-300 font-bold font-mono mt-1 select-all">
+                            {currentUser ? currentUser.email : "akinisaacade@gmail.com"}
+                          </p>
+                        </div>
+                        <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
+                          <span className="text-slate-400 font-mono">Stripe Subscription ID</span>
+                          <p className="text-slate-300 font-bold font-mono text-[11px] truncate mt-1 select-all">
+                            {effectiveSubscription.subscriptionId || "sub_1TfEN_Active_Demo"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex flex-wrap gap-3">
+                        <button 
+                          onClick={() => {
+                            fetchSubscription();
+                            showToast("🔄 Fetching latest subscription detail...");
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2 rounded-md transition-all flex items-center gap-2"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" /> Synchronize License
+                        </button>
+                        <button 
+                          onClick={() => {
+                            alert("Stripe Customer Billing Portal is active in production modes.");
+                          }}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-4 py-2 rounded-md transition-all"
+                        >
+                          Launch Portal Support
+                        </button>
+                      </div>
                     </div>
-                    
+
+                    <div className="space-y-4">
+                      <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg space-y-3">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-amber-400" /> Unlocked Premium Features
+                        </h4>
+                        <ul className="text-xs text-slate-300 space-y-2 mt-2 font-sans list-disc list-inside">
+                          <li>Unlimited <strong>AI Counsel</strong> conversational multi-agent threads.</li>
+                          <li>High-priority OCR document intake with secure cloud archives.</li>
+                          <li>Advanced multi-jurisdictional compliance alert synthesis.</li>
+                          <li>Real-time automated legal translations with bilingual output formatting.</li>
+                          <li>Direct sovereign consultation scheduler with zero wait-times.</li>
+                        </ul>
+                      </div>
+
+                      <div className="bg-amber-955/10 border border-amber-500/20 p-4 rounded-lg">
+                        <div className="flex gap-2">
+                          <Info className="w-4 h-4 text-amber-400 shrink-0" />
+                          <p className="text-[11px] text-amber-300 leading-relaxed font-sans">
+                            Your active Stripe session is tracked securely inside your private cloud sandbox. You can change your active subscriptions context by simulating cancellation.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* --- PAYMENT PLANS VIEW (UNSUBSCRIBED) --- */
+                  <div className="space-y-6 animate-fadeIn">
+                    {/* Alert Banner / Call to Action */}
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
+                      <div className="absolute -right-16 -top-16 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
+                      <div>
+                        <h3 className="text-base font-bold text-white flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" /> Unlock All Legal Matters Premium Active Tier
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                          Access raw AI multi-agent counseling, instant automated compliance audits, sovereign translation synthesizers, and priorities legal booking directly connected to Stripe checkout.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400 mr-2">Secure Test Card Sandbox</span>
+                        <div className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold px-3 py-1 rounded text-xs">
+                          Stripe Live Sandbox
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pricing grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+                      {/* Plan A: Monthly Plan */}
+                      <div className="bg-slate-900/80 p-6 rounded-xl border border-slate-800 flex flex-col justify-between hover:border-slate-700 transition-all space-y-6">
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-xs text-indigo-400 font-bold font-mono tracking-widest uppercase">Professional Monthly</span>
+                              <h3 className="text-xl font-bold text-white mt-1">Counsel Monthly</h3>
+                            </div>
+                            <span className="bg-slate-950 px-2 py-1 text-slate-400 rounded text-[9px] font-bold font-mono uppercase">Monthly access</span>
+                          </div>
+                          <div className="flex items-baseline gap-1.5 border-b border-slate-800 pb-4">
+                            <span className="text-3xl font-black text-white">$39</span>
+                            <span className="text-xs text-slate-400 font-mono">/ month</span>
+                          </div>
+                          <ul className="space-y-3 text-xs text-slate-300">
+                            <li className="flex items-center gap-2">
+                              ● Auto-compliance auditing triggers
+                            </li>
+                            <li className="flex items-center gap-2">
+                              ● Multi-agent AI counseling (Translated input)
+                            </li>
+                            <li className="flex items-center gap-2">
+                              ● Private document vault storage support
+                            </li>
+                            <li className="flex items-center gap-2">
+                              ● Unlimited legal translations
+                            </li>
+                          </ul>
+                        </div>
+                        <button
+                          onClick={() => handleStripeCheckout("monthly")}
+                          disabled={stripeLoading}
+                          className="w-full bg-slate-800 hover:bg-slate-750 text-white font-bold text-xs py-3 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          {stripeLoading ? (
+                            <span className="flex items-center gap-2">
+                              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> Connecting to checkout...
+                            </span>
+                          ) : (
+                            "Subscribe Monthly"
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Plan B: Yearly License (Highlighted) */}
+                      <div className="bg-slate-900/80 p-6 rounded-xl border border-indigo-500/30 shadow-lg shadow-indigo-950/10 flex flex-col justify-between hover:border-indigo-500/50 transition-all space-y-6 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 bg-indigo-500 text-white font-sans font-black text-[9px] tracking-widest uppercase px-3 py-1 rounded-bl-md shadow-sm">
+                          25% SAVINGS
+                        </div>
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-xs text-amber-400 font-bold font-mono tracking-widest uppercase">Annual Unlimited</span>
+                              <h3 className="text-xl font-bold text-white mt-1">Counsel Annual</h3>
+                            </div>
+                            <span className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded text-[9px] font-bold font-mono uppercase">MOST POPULAR</span>
+                          </div>
+                          <div className="flex items-baseline gap-1.5 border-b border-slate-800 pb-4">
+                            <span className="text-3xl font-black text-white">$349</span>
+                            <span className="text-xs text-slate-400 font-mono">/ year</span>
+                          </div>
+                          <ul className="space-y-3 text-xs text-slate-300">
+                            <li className="flex items-center gap-2 text-indigo-300">
+                              ★ Everything in Monthly plan
+                            </li>
+                            <li className="flex items-center gap-2">
+                              ★ Priority processing speed access
+                            </li>
+                            <li className="flex items-center gap-2">
+                              ★ Access to multi-jurisdiction procedures
+                            </li>
+                            <li className="flex items-center gap-2">
+                              ★ Dedicated priority customer logs backup
+                            </li>
+                          </ul>
+                        </div>
+                        <button
+                          onClick={() => handleStripeCheckout("yearly")}
+                          disabled={stripeLoading}
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-3 rounded-lg transition-all shadow-md shadow-indigo-900/20 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          {stripeLoading ? (
+                            <span className="flex items-center gap-2">
+                              <RefreshCw className="w-4 h-4 animate-spin text-white" /> Connecting to checkout...
+                            </span>
+                          ) : (
+                            "Subscribe Annual"
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sandbox test card hints */}
+                    <div className="bg-slate-950 p-5 rounded-lg border border-slate-850 mt-8 space-y-2">
+                      <h4 className="text-xs font-mono font-bold text-amber-300 uppercase tracking-widest">
+                        💳 Stripe Sandbox Developer Guidance
+                      </h4>
+                      <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                        This system operates inside a fully secured sandboxed workspace integrated with Stripe Payment checkouts. 
+                        You can run checkout operations using Stripe credentials. Complete transactions instantly with the 
+                        standard Stripe sandbox testing account card:
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3 pt-1 text-xs font-mono">
+                        <span className="text-slate-400">Card Number:</span>
+                        <strong className="bg-slate-900 px-2 py-1 rounded border border-slate-800 text-white select-all">
+                          4242 &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; 4242
+                        </strong>
+                        <span className="text-slate-400">CVV/EXP:</span>
+                        <strong className="bg-slate-900 px-2 py-1 rounded border border-slate-800 text-white select-all">
+                          Any (e.g. 123, 12/28)
+                        </strong>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-mono border-t border-slate-900 mt-2">
+                        <span className="text-amber-400 font-bold">Publishable Key:</span>
+                        <strong className="bg-indigo-950/40 px-2.5 py-1 rounded border border-indigo-900/40 text-indigo-300 select-all tracking-tight font-bold">
+                          {(import.meta as any).env?.VITE_STRIPE_PUBLISHABLE_KEY || "pk_live_Y8I4kIWBXPdQIfZ2tthPIFwV00DlqCjZva"}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : (
+                /* --- SCHEMA SPECIFICATION VIEW --- */
+                <div className="space-y-6 animate-fadeIn">
+                  <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl relative overflow-hidden space-y-4">
+                    <div className="absolute top-0 right-0 bg-indigo-600 text-white font-mono font-black text-[9px] tracking-widest uppercase px-4 py-1.5 rounded-bl-xl shadow flex items-center gap-1.5">
+                      <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+                      ACTIVE MONGOOSE MODEL
+                    </div>
+
                     <div className="flex items-start gap-4">
-                      <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20 text-emerald-400">
-                        <Award className="w-8 h-8" />
+                      <div className="p-3 bg-indigo-500/10 rounded-lg border border-indigo-500/20 text-indigo-400">
+                        <Database className="w-7 h-7" />
                       </div>
                       <div className="space-y-1">
-                        <h3 className="text-lg font-bold text-white">Sovereign Pro Counsel</h3>
-                        <p className="text-xs text-slate-400">Premium Subscription Plan</p>
-                        <div className="flex items-center gap-1.5 mt-2 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full w-max">
-                          <CheckCircle className="w-3.5 h-3.5" /> Synchronized with Stripe & Firestore Database
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-800 text-xs">
-                      <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
-                        <span className="text-slate-400 font-mono">Subscription Status</span>
-                        <p className="text-emerald-400 font-bold text-sm flex items-center gap-1.5 uppercase font-mono mt-1">
-                          ● Active / Paid
-                        </p>
-                      </div>
-                      <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
-                        <span className="text-slate-400 font-mono">Current Plan Tier</span>
-                        <p className="text-white font-bold text-sm uppercase mt-1">
-                          {effectiveSubscription.planType === "yearly" ? "Yearly License ($349/year)" : "Monthly Membership ($39/month)"}
-                        </p>
-                      </div>
-                      <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
-                        <span className="text-slate-400 font-mono">Subscriber Email</span>
-                        <p className="text-indigo-300 font-bold font-mono mt-1 select-all">
-                          akinisaacade@gmail.com
-                        </p>
-                      </div>
-                      <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
-                        <span className="text-slate-400 font-mono">Stripe Subscription ID</span>
-                        <p className="text-slate-300 font-bold font-mono text-[11px] truncate mt-1 select-all">
-                          {effectiveSubscription.subscriptionId || "sub_1TfEN_Active_Demo"}
+                        <h3 className="text-base font-bold text-white">Database User & Subscription Schema</h3>
+                        <p className="text-xs text-slate-400">
+                          Production schema specification model code. Configured for MongoDB/Mongoose with fields for registration identity, encrypted tokens, and active free trial timers.
                         </p>
                       </div>
                     </div>
 
-                    <div className="pt-2 flex flex-wrap gap-3">
-                      <button 
-                        onClick={() => {
-                          fetchSubscription();
-                          showToast("🔄 Fetching latest subscription detail...");
-                        }}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2 rounded-md transition-all flex items-center gap-2"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" /> Synchronize License
-                      </button>
-                      <button 
-                        onClick={() => {
-                          alert("Stripe Customer Billing Portal is active in production modes.");
-                        }}
-                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-4 py-2 rounded-md transition-all"
-                      >
-                        Launch Portal Support
-                      </button>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                       {/* Left explanation block */}
+                       <div className="md:col-span-1 space-y-4">
+                         <div className="bg-slate-950 border border-slate-850 p-4 rounded-lg space-y-3">
+                           <h4 className="text-xs font-bold text-indigo-300 font-mono tracking-wider uppercase border-b border-slate-800 pb-1.5">
+                             Field Specifications
+                           </h4>
+                           <ul className="space-y-3 text-[11px] text-slate-300 font-sans">
+                             <li>
+                               <strong className="text-white font-mono block">fullName</strong>
+                               <span className="text-slate-400 text-[10px] block mt-0.5 leading-normal">
+                                 String, required, automatically trimmed of outer spacing on creation. Matches user's registration display name.
+                               </span>
+                             </li>
+                             <li>
+                               <strong className="text-white font-mono block">email</strong>
+                               <span className="text-slate-400 text-[10px] block mt-0.5 leading-normal">
+                                 String, required, uniqueness indexed, auto-lowercased, and trimmed. Serves as primary billing lookup.
+                               </span>
+                             </li>
+                             <li>
+                               <strong className="text-white font-mono block">password</strong>
+                               <span className="text-slate-400 text-[10px] block mt-0.5 leading-normal">
+                                 Secure password string stored with state-of-the-art cryptographic hashing in database.
+                               </span>
+                             </li>
+                             <li>
+                               <strong className="text-white font-mono block">subscriptionStatus</strong>
+                               <span className="text-slate-400 text-[10px] block mt-0.5 leading-normal mb-1">
+                                 Enumerated state string field matching access bounds:
+                               </span>
+                               <span className="inline-flex gap-1">
+                                 <span className="bg-violet-950 text-violet-300 px-1.5 py-0.2 rounded border border-violet-850 font-mono text-[9px]">trial</span>
+                                 <span className="bg-emerald-900 text-emerald-100 px-1.5 py-0.2 rounded border border-emerald-800 font-mono text-[9px]">active</span>
+                                 <span className="bg-rose-950 text-rose-300 px-1.5 py-0.2 rounded border border-rose-850 font-mono text-[9px]">expired</span>
+                               </span>
+                             </li>
+                             <li>
+                               <strong className="text-white font-mono block">trialEndDate</strong>
+                               <span className="text-slate-400 text-[10px] block mt-0.5 leading-normal">
+                                 Date timestamp of subscription expiration. Default is set to exactly 7 days from execution date.
+                               </span>
+                             </li>
+                           </ul>
+                         </div>
+
+                         <div className="bg-amber-500/5 border border-amber-500/10 p-4 rounded-lg space-y-1">
+                           <h5 className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
+                             🧩 Dynamic Simulator Link
+                           </h5>
+                           <p className="text-[10px] text-slate-400 leading-normal">
+                             This application's registration workflows and session structures have been fully integrated to write these fields dynamically, keeping database integrity consistent.
+                           </p>
+                         </div>
+                       </div>
+
+                       {/* Code Block Container */}
+                       <div className="md:col-span-2 space-y-2">
+                         <div className="flex items-center justify-between text-xs bg-slate-950 px-4 py-2 border border-slate-800 rounded-t-lg border-b-0">
+                           <span className="text-slate-400 font-mono text-[11px] flex items-center gap-1.5">
+                             <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                             src/models/User.js <span className="text-slate-600 font-normal">| Mongoose Schema</span>
+                           </span>
+                           <button
+                             type="button"
+                             onClick={() => {
+                               navigator.clipboard.writeText(`const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  fullName: { 
+    type: String, 
+    required: true, 
+    trim: true 
+  },
+  email: { 
+    type: String, 
+    required: true, 
+    unique: true, 
+    lowercase: true, 
+    trim: true 
+  },
+  password: { 
+    type: String, 
+    required: true 
+  },
+  subscriptionStatus: { 
+    type: String, 
+    enum: ['trial', 'active', 'expired'], 
+    default: 'trial' 
+  },
+  trialEndDate: { 
+    type: Date, 
+    default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+  }
+}, { timestamps: true });
+
+module.exports = mongoose.model('User', userSchema);`);
+                               showToast("📋 Schema copied to clipboard!");
+                             }}
+                             className="text-[10px] uppercase tracking-wider bg-slate-900 border border-slate-800 hover:border-slate-750 text-indigo-400 hover:text-indigo-300 font-bold px-3 py-1 rounded transition-all cursor-pointer"
+                           >
+                             Copy Code
+                           </button>
+                         </div>
+                         <div className="bg-slate-950 font-mono p-4 rounded-b-lg border border-slate-800 overflow-x-auto text-[11px] leading-relaxed select-all text-slate-300 max-h-[380px]">
+                           <pre className="whitespace-pre">
+{`const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  fullName: { 
+    type: String, 
+    required: true, 
+    trim: true 
+  },
+  email: { 
+    type: String, 
+    required: true, 
+    unique: true, 
+    lowercase: true, 
+    trim: true 
+  },
+  password: { 
+    type: String, 
+    required: true 
+  },
+  subscriptionStatus: { 
+    type: String, 
+    enum: ['trial', 'active', 'expired'], 
+    default: 'trial' 
+  },
+  trialEndDate: { 
+    type: Date, 
+    default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+  }
+}, { timestamps: true });
+
+module.exports = mongoose.model('User', userSchema);`}
+                           </pre>
+                         </div>
+                       </div>
+                     </div>
                     </div>
                   </div>
-
-                  <div className="space-y-4">
-                    <div className="bg-slate-900 border border-slate-800 p-5 rounded-lg space-y-3">
-                      <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-amber-400" /> Unlocked Premium Features
-                      </h4>
-                      <ul className="text-xs text-slate-300 space-y-2 mt-2 font-sans list-disc list-inside">
-                        <li>Unlimited <strong>AI Counsel</strong> conversational multi-agent threads.</li>
-                        <li>High-priority OCR document intake with secure cloud archives.</li>
-                        <li>Advanced multi-jurisdictional compliance alert synthesis.</li>
-                        <li>Real-time automated legal translations with bilingual output formatting.</li>
-                        <li>Direct sovereign consultation scheduler with zero wait-times.</li>
-                      </ul>
-                    </div>
-
-                    <div className="bg-amber-955/10 border border-amber-500/20 p-4 rounded-lg">
-                      <div className="flex gap-2">
-                        <Info className="w-4 h-4 text-amber-400 shrink-0" />
-                        <p className="text-[11px] text-amber-300 leading-relaxed">
-                          Your active Stripe session is tracked securely inside your private cloud sandbox. You can change your active subscriptions context by simulating cancellation.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* --- PAYMENT PLANS VIEW (UNSUBSCRIBED) --- */
-                <div className="space-y-6">
-                  {/* Alert Banner / Call to Action */}
-                  <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-                    <div className="absolute -right-16 -top-16 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
-                    <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" /> Unlock All Legal Matters Premium Active Tier
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                        Access raw AI multi-agent counseling, instant automated compliance audits, sovereign translation synthesizers, and priorities legal booking directly connected to Stripe checkout.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400 mr-2">Secure Test Card Sandbox</span>
-                      <div className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold px-3 py-1 rounded text-xs">
-                        Stripe Live Sandbox
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Pricing grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-                    {/* Plan A: Monthly Plan */}
-                    <div className="bg-slate-900/80 p-6 rounded-xl border border-slate-800 flex flex-col justify-between hover:border-slate-700 transition-all space-y-6">
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-xs text-indigo-400 font-bold font-mono tracking-widest uppercase">Professional Monthly</span>
-                            <h3 className="text-xl font-bold text-white mt-1">Counsel Monthly</h3>
-                          </div>
-                          <span className="bg-slate-950 px-2 py-1 text-slate-400 rounded text-[9px] font-bold font-mono font-sans uppercase">Monthly access</span>
-                        </div>
-                        <div className="flex items-baseline gap-1.5 border-b border-slate-800 pb-4">
-                          <span className="text-3xl font-black text-white">$39</span>
-                          <span className="text-xs text-slate-400 font-mono">/ month</span>
-                        </div>
-                        <ul className="space-y-3 text-xs text-slate-300">
-                          <li className="flex items-center gap- check">
-                            ● Auto-compliance auditing triggers
-                          </li>
-                          <li className="flex items-center gap- check">
-                            ● Multi-agent AI counseling (Translated input)
-                          </li>
-                          <li className="flex items-center gap- check">
-                            ● Private document vault storage support
-                          </li>
-                          <li className="flex items-center gap- check">
-                            ● Unlimited legal translations
-                          </li>
-                        </ul>
-                      </div>
-                      <button
-                        onClick={() => handleStripeCheckout("monthly")}
-                        disabled={stripeLoading}
-                        className="w-full bg-slate-800 hover:bg-slate-750 text-white font-bold text-xs py-3 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        {stripeLoading ? (
-                          <span className="flex items-center gap-2">
-                            <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> Connecting to checkout...
-                          </span>
-                        ) : (
-                          "Subscribe Monthly"
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Plan B: Yearly License (Highlighted) */}
-                    <div className="bg-slate-900/80 p-6 rounded-xl border border-indigo-500/30 shadow-lg shadow-indigo-950/10 flex flex-col justify-between hover:border-indigo-500/50 transition-all space-y-6 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 bg-indigo-500 text-white font-sans font-black text-[9px] tracking-widest uppercase px-3 py-1 rounded-bl-md shadow-sm">
-                        25% SAVINGS
-                      </div>
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-xs text-amber-400 font-bold font-mono tracking-widest uppercase">Annual Unlimited</span>
-                            <h3 className="text-xl font-bold text-white mt-1">Counsel Annual</h3>
-                          </div>
-                          <span className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded text-[9px] font-bold font-mono font-sans uppercase">MOST POPULAR</span>
-                        </div>
-                        <div className="flex items-baseline gap-1.5 border-b border-slate-800 pb-4">
-                          <span className="text-3xl font-black text-white">$349</span>
-                          <span className="text-xs text-slate-400 font-mono">/ year</span>
-                        </div>
-                        <ul className="space-y-3 text-xs text-slate-300">
-                          <li className="flex items-center gap-2 text-indigo-300">
-                            ★ Everything in Monthly plan
-                          </li>
-                          <li className="flex items-center gap-2">
-                            ★ Priority processing speed access
-                          </li>
-                          <li className="flex items-center gap-2">
-                            ★ Access to multi-jurisdiction procedures
-                          </li>
-                          <li className="flex items-center gap-2">
-                            ★ Dedicated priority customer logs backup
-                          </li>
-                        </ul>
-                      </div>
-                      <button
-                        onClick={() => handleStripeCheckout("yearly")}
-                        disabled={stripeLoading}
-                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-3 rounded-lg transition-all shadow-md shadow-indigo-900/20 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        {stripeLoading ? (
-                          <span className="flex items-center gap-2">
-                            <RefreshCw className="w-4 h-4 animate-spin text-white" /> Connecting to checkout...
-                          </span>
-                        ) : (
-                          "Subscribe Annual"
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sandbox test card hints */}
-                  <div className="bg-slate-950 p-5 rounded-lg border border-slate-850 mt-8 space-y-2">
-                    <h4 className="text-xs font-mono font-bold text-amber-300 uppercase tracking-widest">
-                      💳 Stripe Sandbox Developer Guidance
-                    </h4>
-                    <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-                      This system operates inside a fully secured sandboxed workspace integrated with Stripe Payment checkouts. 
-                      You can run checkout operations using Stripe credentials. Complete transactions instantly with the 
-                      standard Stripe sandbox testing account card:
-                    </p>
-                    <div className="flex flex-wrap items-center gap-3 pt-1 text-xs font-mono">
-                      <span className="text-slate-400">Card Number:</span>
-                      <strong className="bg-slate-900 px-2 py-1 rounded border border-slate-800 text-white select-all">
-                        4242 &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; 4242
-                      </strong>
-                      <span className="text-slate-400">CVV/EXP:</span>
-                      <strong className="bg-slate-900 px-2 py-1 rounded border border-slate-800 text-white select-all">
-                        Any (e.g. 123, 12/28)
-                      </strong>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-mono border-t border-slate-900 mt-2">
-                      <span className="text-amber-400 font-bold">Publishable Key:</span>
-                      <strong className="bg-indigo-950/40 px-2.5 py-1 rounded border border-indigo-900/40 text-indigo-300 select-all tracking-tight font-bold">
-                        {(import.meta as any).env?.VITE_STRIPE_PUBLISHABLE_KEY || "pk_live_Y8I4kIWBXPdQIfZ2tthPIFwV00DlqCjZva"}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              )}
+                )
+              }
             </div>
           )}
 
