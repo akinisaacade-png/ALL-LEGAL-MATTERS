@@ -48,6 +48,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { collection, doc, getDocs, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import ComplianceDashboard from "./components/ComplianceDashboard";
+import AuthPortal from "./components/AuthPortal";
 import { scanDocumentCompliance, ComplianceAlert } from "./complianceEngine";
 
 interface SystemLogMsg {
@@ -58,7 +59,23 @@ interface SystemLogMsg {
 
 export default function App() {
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<"directory" | "counsel" | "vault" | "compliance" | "forms" | "consultations" | "multimodal" | "maintenance" | "translation" | "billing">("directory");
+  const [activeTab, setActiveTab] = useState<"directory" | "counsel" | "vault" | "compliance" | "forms" | "consultations" | "multimodal" | "maintenance" | "translation" | "billing" | "auth">("directory");
+
+  // Dynamic Public Accounts Auth States
+  const [currentUser, setCurrentUser] = useState<{
+    email: string;
+    name: string;
+    createdAt: string;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem("sovereign_current_user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [authView, setAuthView] = useState<"signin" | "signup">("signup");
 
   // Selected country for jurisdiction deep-dive
   const [selectedCountry, setSelectedCountry] = useState<string>("CA");
@@ -358,11 +375,14 @@ export default function App() {
     }, 4500);
   };
 
-  // Fetch Subscription and Register 7-day Free Trial on startup
+  // Fetch Subscription and Register 7-day Free Trial on startup or user change
   useEffect(() => {
     fetchSubscription();
     registerAndCheckTrial();
+  }, [currentUser]);
 
+  // Handle Stripe Success Callback Verification
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const checkoutStatus = params.get("stripe_checkout");
     const sessionId = params.get("session_id");
@@ -373,7 +393,7 @@ export default function App() {
           const res = await fetch(`/api/stripe/session-status?session_id=${sessionId}`);
           const data = await res.json();
           if (data && (data.payment_status === "paid" || data.status === "complete")) {
-            const userEmail = "akinisaacade@gmail.com";
+            const userEmail = currentUser?.email || "akinisaacade@gmail.com";
             // Write to Firestore for persistent subscriber data!
             try {
               await setDoc(doc(db, "subscriptions", userEmail.replace(/\./g, "_")), {
@@ -421,7 +441,7 @@ export default function App() {
   }, [subLoaded, trialLoaded, isPremiumOrTrialActive]);
 
   const fetchSubscription = async () => {
-    const userEmail = "akinisaacade@gmail.com";
+    const userEmail = currentUser?.email || "akinisaacade@gmail.com";
     try {
       // 1. First, check Firestore for active subscription
       const docRef = doc(db, "subscriptions", userEmail.replace(/\./g, "_"));
@@ -463,18 +483,23 @@ export default function App() {
   };
 
   const registerAndCheckTrial = async () => {
-    const userEmail = "akinisaacade@gmail.com";
+    const userEmail = currentUser?.email || "akinisaacade@gmail.com";
     try {
       const userRef = doc(db, "users", userEmail.replace(/\./g, "_"));
       const userSnap = await getDoc(userRef);
       let profileData;
       if (userSnap.exists()) {
-        profileData = userSnap.data() as { email: string; createdAt: string };
+        profileData = userSnap.data() as { email: string; createdAt: string; name?: string };
       } else {
-        // Newly registered user! Create profile with 7-day free trial
+        // Newly registered user or system fallback! Create profile with 7-day free trial if we have active user
+        if (!currentUser) {
+          // If public guest mode and no profile, do not auto-seed a trial on DB, just use default/local trial fallback
+          throw new Error("Guest Mode: Use local state trial calculation.");
+        }
         profileData = {
           email: userEmail,
-          createdAt: new Date().toISOString()
+          name: currentUser.name,
+          createdAt: currentUser.createdAt || new Date().toISOString()
         };
         await setDoc(userRef, profileData);
         setTimeout(() => {
@@ -486,7 +511,7 @@ export default function App() {
       
       // Calculate trial status
       const now = new Date();
-      const regDate = new Date(profileData.createdAt);
+      const regDate = new Date(profileData.createdAt || new Date().toISOString());
       const diffTime = now.getTime() - regDate.getTime();
       const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
       const daysRemaining = Math.max(0, 7 - diffDays);
@@ -499,17 +524,15 @@ export default function App() {
       });
     } catch (err) {
       console.error("Error with Firestore user profile/trial:", err);
-      // Fallback local persistence if Firestore is unreachable
-      const cachedCreated = localStorage.getItem("trial_starts");
-      let createdAtStr = cachedCreated;
-      if (!createdAtStr) {
-        createdAtStr = new Date().toISOString();
-        localStorage.setItem("trial_starts", createdAtStr);
+      // Fallback local persistence if Firestore is unreachable or in guest mode
+      const cachedCreated = localStorage.getItem("trial_starts") || new Date().toISOString();
+      if (!localStorage.getItem("trial_starts")) {
+        localStorage.setItem("trial_starts", cachedCreated);
       }
       const now = new Date();
-      const regDate = new Date(createdAtStr);
+      const regDate = new Date(cachedCreated);
       const diffTime = now.getTime() - regDate.getTime();
-      const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
+      const diffDays = Math.max(0, diffTime / (1000 * 60 * 65 * 24));
       const daysRemaining = Math.max(0, 7 - diffDays);
       const isTrialActive = diffDays < 7;
 
@@ -524,8 +547,14 @@ export default function App() {
   };
 
   const handleStripeCheckout = async (planType: "monthly" | "yearly") => {
+    if (!currentUser) {
+      setActiveTab("auth");
+      setAuthView("signup");
+      showToast("🔒 Security reminder: Please create a free account to bind and activate your subscription plan securely.");
+      return;
+    }
     setStripeLoading(true);
-    const userEmail = "akinisaacade@gmail.com";
+    const userEmail = currentUser.email;
     try {
       const response = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
@@ -1430,6 +1459,59 @@ This power is durable and persists through any subsequent incapacity.`;
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {!currentUser ? (
+              <div className="flex items-center gap-2">
+                <button
+                  id="btn-header-signup"
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("auth");
+                    setAuthView("signup");
+                    showToast("✨ Opening Sovereign Account Registration Portal.");
+                  }}
+                  className="px-3 py-2 rounded-lg text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md flex items-center gap-1 border border-indigo-400/30 font-sans"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-white" />
+                  Sign Up Free
+                </button>
+                <button
+                  id="btn-header-signin"
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("auth");
+                    setAuthView("signin");
+                    showToast("🔑 Secure console Login session verification.");
+                  }}
+                  className="px-3 py-2 rounded-lg text-xs font-black bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 transition-all font-sans"
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
+                  Sign In
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                <div className="flex flex-col text-right pl-1">
+                  <span className="text-[9px] text-slate-500 font-mono font-bold">ACTIVE ROLE</span>
+                  <span className="text-xs font-extrabold text-indigo-300 truncate max-w-[120px] font-sans">{currentUser.name}</span>
+                </div>
+                <button
+                  id="btn-header-signout"
+                  type="button"
+                  onClick={() => {
+                    setCurrentUser(null);
+                    localStorage.removeItem("sovereign_current_user");
+                    localStorage.removeItem("cached_documents");
+                    setSimulatedTier("real");
+                    setActiveTab("directory");
+                    showToast("🔒 Securely signed out from Sovereign Session.");
+                  }}
+                  className="px-2.5 py-1.5 bg-rose-950/40 text-rose-300 hover:bg-rose-900 hover:text-white border border-rose-500/20 text-[10px] font-black rounded transition-all uppercase font-sans"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )}
+
             {/* Prominent Subscription Access Button */}
             <button
               id="btn-header-subscribe-plans"
@@ -1469,7 +1551,7 @@ This power is durable and persists through any subsequent incapacity.`;
             <div className="flex items-center gap-1.5">
               <span className="text-slate-500 font-medium font-mono text-[11px]">CONTEXT:</span>
               <span className="bg-slate-900 border border-slate-800 text-indigo-300 px-2 py-0.5 rounded font-mono font-bold select-all text-[11px]">
-                akinisaacade@gmail.com
+                {currentUser ? currentUser.email : "Not Signed In (Public Guest Mode)"}
               </span>
             </div>
             
@@ -1685,6 +1767,20 @@ This power is durable and persists through any subsequent incapacity.`;
           >
             <Globe className="w-4 h-4 text-emerald-400 animate-pulse" />
             Legal Translation
+          </button>
+
+          <button
+            id="tab-btn-auth"
+            onClick={() => {
+              setActiveTab("auth");
+              setAuthView(currentUser ? "signin" : "signup");
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
+              activeTab === "auth" ? "bg-indigo-600 text-white border-b-2 border-amber-400" : "bg-slate-800 text-indigo-300 hover:bg-slate-700"
+            }`}
+          >
+            <UserCheck className="w-4 h-4 text-teal-400" />
+            <span>{currentUser ? "User Identity" : "Sign Up / Join"}</span>
           </button>
 
           <button
@@ -2977,6 +3073,7 @@ This power is durable and persists through any subsequent incapacity.`;
                 setActiveTab(tab);
               }}
               showToast={showToast}
+              currentUser={currentUser}
               onUpdateDoc={async (updatedDoc) => {
                 setUploadedDocs(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
                 const freshList = uploadedDocs.map(d => d.id === updatedDoc.id ? updatedDoc : d);
@@ -4434,7 +4531,7 @@ This power is durable and persists through any subsequent incapacity.`;
                   <div className="flex items-center gap-2 text-xs font-mono">
                     <span className="text-slate-400">Operator Session:</span>
                     <span className="bg-slate-900 border border-slate-800 text-indigo-400 px-2.5 py-1 rounded font-bold">
-                      akinisaacade@gmail.com
+                      {currentUser ? currentUser.email : "Guest Mode (Unregistered)"}
                     </span>
                   </div>
                 </div>
@@ -4679,6 +4776,21 @@ This power is durable and persists through any subsequent incapacity.`;
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "auth" && (
+            <div id="auth-panel" className="max-w-4xl mx-auto py-12 px-4 flex flex-col items-center justify-center min-h-[60vh]">
+              <AuthPortal
+                onAuthSuccess={(userData) => {
+                  setCurrentUser(userData);
+                  localStorage.setItem("sovereign_current_user", JSON.stringify(userData));
+                  setActiveTab("billing");
+                  showToast(`🎉 Secure console session loaded! Welcome, ${userData.name}.`);
+                }}
+                initialMode={authView}
+                onClose={() => setActiveTab("directory")}
+              />
             </div>
           )}
 

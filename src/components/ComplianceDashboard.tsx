@@ -29,6 +29,7 @@ interface ComplianceDashboardProps {
   onNavigateToTab: (tab: "counsel" | "vault") => void;
   showToast: (msg: string) => void;
   onUpdateDoc?: (doc: LegalDocument) => Promise<void> | void;
+  currentUser?: { email: string; name: string } | null;
 }
 
 export default function ComplianceDashboard({
@@ -37,6 +38,7 @@ export default function ComplianceDashboard({
   onNavigateToTab,
   showToast,
   onUpdateDoc,
+  currentUser,
 }: ComplianceDashboardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -116,7 +118,7 @@ export default function ComplianceDashboard({
         versionNumber: currentVerNum + 1,
         content: selectedDoc.content,
         editedAt: new Date().toISOString(),
-        editedBy: selectedDoc.uploadedBy || "akinisaacade@gmail.com",
+        editedBy: selectedDoc.uploadedBy || currentUser?.email || "akinisaacade@gmail.com",
         changeSummary: "Pre-Bulk Resolution Safeguard Baseline Snapshot",
         riskScore: selectedDoc.riskScore,
         clauses: selectedDoc.clauses ? [...selectedDoc.clauses] : [],
@@ -284,7 +286,9 @@ export default function ComplianceDashboard({
       // Timestamp
       const dateStr = new Date().toLocaleString();
       doc.text(`Generated At: ${dateStr} (Pacific Standard Time)`, 12, 29);
-      doc.text(`Target Auditor Recipient: Akin Isacc (akinisaacade@gmail.com)`, 12, 34);
+      const auditorName = currentUser?.name || "Akin Isacc";
+      const auditorEmail = currentUser?.email || "akinisaacade@gmail.com";
+      doc.text(`Target Auditor Recipient: ${auditorName} (${auditorEmail})`, 12, 34);
 
       // Section: Summary Index
       doc.setTextColor(15, 23, 42);
