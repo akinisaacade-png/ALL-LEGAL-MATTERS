@@ -267,7 +267,55 @@ export default function App() {
   }>({ isTrialActive: true, daysRemaining: 7, daysTotal: 7 });
   const [trialLoaded, setTrialLoaded] = useState<boolean>(false);
 
-  const isPremiumOrTrialActive = subscription?.status === "active" || trialStatus.isTrialActive;
+  // Subscription Sandbox Override Tier (Sovereign Simulator)
+  const [simulatedTier, setSimulatedTier] = useState<"real" | "trial" | "monthly" | "yearly" | "expired">("real");
+
+  // Dynamically resolve subscription or trial state based on simulation selection
+  const effectiveSubscription = React.useMemo(() => {
+    if (simulatedTier === "monthly") {
+      return {
+        status: "active",
+        planType: "monthly",
+        priceId: "price_1TfENIBMbxh6jv0CBKolLI4B",
+        subscriptionId: "sub_monthly_sim_sandbox"
+      };
+    }
+    if (simulatedTier === "yearly") {
+      return {
+        status: "active",
+        planType: "yearly",
+        priceId: "price_1TfEPRBMbxh6jv0CKiwDzY4x",
+        subscriptionId: "sub_yearly_sim_sandbox"
+      };
+    }
+    if (simulatedTier === "expired") {
+      return null;
+    }
+    if (simulatedTier === "trial") {
+      return null;
+    }
+    return subscription;
+  }, [simulatedTier, subscription]);
+
+  const effectiveTrialStatus = React.useMemo(() => {
+    if (simulatedTier === "trial") {
+      return {
+        isTrialActive: true,
+        daysRemaining: 7.0,
+        daysTotal: 7
+      };
+    }
+    if (simulatedTier === "expired" || simulatedTier === "monthly" || simulatedTier === "yearly") {
+      return {
+        isTrialActive: false,
+        daysRemaining: 0,
+        daysTotal: 7
+      };
+    }
+    return trialStatus;
+  }, [simulatedTier, trialStatus]);
+
+  const isPremiumOrTrialActive = effectiveSubscription?.status === "active" || effectiveTrialStatus.isTrialActive;
 
   // Toast Notification state
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -1158,6 +1206,12 @@ export default function App() {
       return;
     }
 
+    if (effectiveSubscription?.planType === "monthly") {
+      setActiveTab("billing");
+      showToast("👑 Premium Upgrade Required: Custom AI TTS Synthesis is a high-compute feature reserved for Annual Unlimited subscribers.");
+      return;
+    }
+
     setTtsSpeechLoading(true);
     setTtsAudioResult(null);
     try {
@@ -1225,6 +1279,12 @@ export default function App() {
     if (!isPremiumOrTrialActive) {
       setActiveTab("billing");
       showToast("⚠️ Premium membership required: Please select a plan to activate Veo Generative Video briefs.");
+      return;
+    }
+
+    if (effectiveSubscription?.planType === "monthly") {
+      setActiveTab("billing");
+      showToast("👑 Premium Upgrade Required: Veo Generative Video briefings are advanced multimodal features reserved for Annual Unlimited subscribers.");
       return;
     }
 
@@ -1370,7 +1430,33 @@ This power is durable and persists through any subsequent incapacity.`;
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div id="secure-cert-badge" className="flex items-center gap-2 text-[11px] font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-md">
+            {/* Prominent Subscription Access Button */}
+            <button
+              id="btn-header-subscribe-plans"
+              type="button"
+              onClick={() => {
+                setActiveTab("billing");
+                showToast("🎯 Navigated to Membership & Subscriptions Hub.");
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 border shadow-lg hover:scale-[1.02] active:scale-[0.98] ${
+                effectiveSubscription?.status === "active"
+                  ? "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white border-emerald-400/50 hover:shadow-emerald-500/10"
+                  : effectiveTrialStatus.isTrialActive
+                    ? "bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-500 hover:to-violet-400 text-white border-indigo-400/50 hover:shadow-indigo-500/10"
+                    : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 border-amber-400 hover:shadow-amber-550/20 animate-pulse"
+              }`}
+            >
+              <Award className={`w-4 h-4 ${effectiveSubscription?.status === "active" ? "text-yellow-300 animate-bounce" : "text-slate-900"}`} />
+              <span className="uppercase tracking-wider">
+                {effectiveSubscription?.status === "active"
+                  ? `Active Plan: ${effectiveSubscription.planType === "yearly" ? "Yearly Pro" : "Monthly Pro"}`
+                  : effectiveTrialStatus.isTrialActive
+                    ? "Upgrade to Pro License"
+                    : "Subscribe: Access AI Tools"}
+              </span>
+            </button>
+
+            <div id="secure-cert-badge" className="hidden sm:flex items-center gap-2 text-[11px] font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-md">
               <div className="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div>
               <span>SOC2 CERTIFIED · GDPR COMPLIANT · 256-BIT ENCRYPTED</span>
             </div>
@@ -1378,36 +1464,109 @@ This power is durable and persists through any subsequent incapacity.`;
         </header>
 
         {/* Trial & Subscription Status Info Bar */}
-        <div id="trial-subscription-bar" className="bg-slate-950 border-b border-indigo-950/60 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-medium">Operator Context:</span>
-            <span className="bg-slate-900 border border-slate-800 text-indigo-300 px-2.5 py-0.5 rounded font-mono font-bold select-all">
-              akinisaacade@gmail.com
-            </span>
+        <div id="trial-subscription-bar" className="bg-slate-950 border-b border-indigo-950/60 px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 text-xs font-sans">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500 font-medium font-mono text-[11px]">CONTEXT:</span>
+              <span className="bg-slate-900 border border-slate-800 text-indigo-300 px-2 py-0.5 rounded font-mono font-bold select-all text-[11px]">
+                akinisaacade@gmail.com
+              </span>
+            </div>
+            
+            {/* Sovereign Subscription Sandbox Simulator */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-lg">
+              <span className="text-[10px] text-slate-400 font-mono pl-1.5 pr-1 font-bold flex items-center gap-1">
+                <Sliders className="w-3 h-3 text-indigo-400" />
+                SIMULATE ROLE:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimulatedTier("real");
+                  showToast("⚡ Reset simulation: Connected directly to live database & Stripe credentials.");
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all uppercase ${
+                  simulatedTier === "real" ? "bg-indigo-600 text-white font-extrabold shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Live API
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimulatedTier("trial");
+                  showToast("⭐ Simulated Access: Active 7-Day Free Trial");
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all uppercase ${
+                  simulatedTier === "trial" ? "bg-violet-600 text-white font-extrabold shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Trial
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimulatedTier("monthly");
+                  showToast("💳 Simulated Access: Active Monthly Pro Membership ($39/mo)");
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all uppercase ${
+                  simulatedTier === "monthly" ? "bg-emerald-700 text-emerald-105 font-bold shadow bg-emerald-700" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimulatedTier("yearly");
+                  showToast("👑 Simulated Access: Active Yearly Unlimited License ($349/yr)");
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all uppercase ${
+                  simulatedTier === "yearly" ? "bg-amber-500 text-slate-950 font-black shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Annual
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimulatedTier("expired");
+                  showToast("⚠️ Simulated Access: Expired Trial (Unsubscribed Public User)");
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all uppercase ${
+                  simulatedTier === "expired" ? "bg-rose-600 text-white font-extrabold shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Expired
+              </button>
+            </div>
           </div>
           
-          <div className="flex items-center gap-2.5">
-            {subscription?.status === "active" ? (
-              <span className="flex items-center gap-1.5 text-emerald-400 font-extrabold bg-emerald-950/40 border border-emerald-500/20 px-3 py-1 rounded-md text-[10px] uppercase tracking-wider">
-                <Award className="w-3.5 h-3.5 text-yellow-400" /> Premium Member Authorized
+          <div className="flex flex-wrap items-center gap-2.5">
+            {effectiveSubscription?.status === "active" ? (
+              <span className="flex items-center gap-1.5 text-emerald-400 font-extrabold bg-emerald-950/45 border border-emerald-500/20 px-3 py-1 rounded-md text-[10px] uppercase tracking-wider">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                Authorized: {effectiveSubscription.planType === "yearly" ? "Annual Elite License" : "Monthly Pro Plan"}
               </span>
-            ) : trialStatus.isTrialActive ? (
+            ) : effectiveTrialStatus.isTrialActive ? (
               <span className="flex items-center gap-1.5 text-indigo-300 font-semibold bg-indigo-950/40 border border-indigo-500/20 px-3 py-1 rounded-md text-[10px] tracking-wide">
-                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" style={{ animationDuration: "5s" }} /> 7-Day Free Trial Remaining: <strong className="text-indigo-200">{Math.ceil(trialStatus.daysRemaining)} days</strong>
+                <Sparkles className="w-3 h-3 text-amber-300 animate-spin" style={{ animationDuration: "5s" }} />
+                Trial Remaining: <strong className="text-white">{Math.ceil(effectiveTrialStatus.daysRemaining)} Days</strong>
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 text-rose-400 font-extrabold bg-rose-950/40 border border-rose-500/20 px-3 py-1 rounded-md text-[10px] uppercase tracking-wider animate-pulse">
-                ⚠️ trial expired (AI Access Suspended)
+              <span className="flex items-center gap-1.5 text-rose-400 font-extrabold bg-rose-950/40 border border-rose-500/20 px-3 py-1 rounded-md text-[10px] uppercase tracking-wider animate-pulse font-mono">
+                ⚠️ Trial Expired (AI Access Suspended)
               </span>
             )}
-
+ 
             {!isPremiumOrTrialActive && (
               <button 
                 id="btn-quick-upgrade"
+                type="button"
                 onClick={() => setActiveTab("billing")}
-                className="bg-amber-600 hover:bg-amber-500 text-white font-extrabold px-3 py-1 rounded text-[10px] transition-all hover:scale-105 active:scale-95 uppercase tracking-wide shadow"
+                className="bg-amber-550 hover:bg-amber-400 text-slate-950 font-black px-3.5 py-1 rounded-md text-[10px] transition-all hover:scale-105 active:scale-95 uppercase tracking-wide shadow-md border border-amber-300 ml-1"
               >
-                Choose Subscription Plan
+                Select Premium Plan
               </button>
             )}
           </div>
@@ -1537,7 +1696,7 @@ This power is durable and persists through any subsequent incapacity.`;
           >
             <CreditCard className="w-4 h-4 text-amber-400" />
             <span>Membership & Billing</span>
-            {subscription?.status === "active" ? (
+            {effectiveSubscription?.status === "active" ? (
               <span className="flex items-center gap-0.5 text-[9px] bg-emerald-500 text-white font-extrabold px-1.5 py-0.5 rounded-full animate-bounce">
                 <Award className="w-3 h-3 text-yellow-300" /> PRO
               </span>
@@ -2818,6 +2977,16 @@ This power is durable and persists through any subsequent incapacity.`;
                 setActiveTab(tab);
               }}
               showToast={showToast}
+              onUpdateDoc={async (updatedDoc) => {
+                setUploadedDocs(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+                const freshList = uploadedDocs.map(d => d.id === updatedDoc.id ? updatedDoc : d);
+                localStorage.setItem("cached_documents", JSON.stringify(freshList));
+                try {
+                  await setDoc(doc(db, "documents", updatedDoc.id), updatedDoc);
+                } catch (dbErr) {
+                  console.warn("Could not sync compliance document update with Cloud Firestore", dbErr);
+                }
+              }}
             />
           )}
 
@@ -4271,7 +4440,7 @@ This power is durable and persists through any subsequent incapacity.`;
                 </div>
               </div>
 
-              {subscription?.status === "active" ? (
+              {effectiveSubscription?.status === "active" ? (
                 /* --- ACTIVE PREMIUM VIEW --- */
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Glowing Active Membership Card */}
@@ -4303,7 +4472,7 @@ This power is durable and persists through any subsequent incapacity.`;
                       <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
                         <span className="text-slate-400 font-mono">Current Plan Tier</span>
                         <p className="text-white font-bold text-sm uppercase mt-1">
-                          {subscription.planType === "yearly" ? "Yearly License ($349/year)" : "Monthly Membership ($39/month)"}
+                          {effectiveSubscription.planType === "yearly" ? "Yearly License ($349/year)" : "Monthly Membership ($39/month)"}
                         </p>
                       </div>
                       <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
@@ -4315,7 +4484,7 @@ This power is durable and persists through any subsequent incapacity.`;
                       <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
                         <span className="text-slate-400 font-mono">Stripe Subscription ID</span>
                         <p className="text-slate-300 font-bold font-mono text-[11px] truncate mt-1 select-all">
-                          {subscription.subscriptionId || "sub_1TfEN_Active_Demo"}
+                          {effectiveSubscription.subscriptionId || "sub_1TfEN_Active_Demo"}
                         </p>
                       </div>
                     </div>
