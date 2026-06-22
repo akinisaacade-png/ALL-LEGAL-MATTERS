@@ -1103,8 +1103,8 @@ let isMongoConnected = false;
 // Graceful database connector for live deployments of Mongoose
 const connectMongooseDb = async () => {
   const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    console.log("ℹ️ MONGODB_URI is not provided in environment. User database initialized in Sandbox validation mode.");
+  if (!uri || typeof uri !== "string" || (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://"))) {
+    console.log("ℹ️ MONGODB_URI is not provided or has an invalid schema in environment. User database initialized in Sandbox validation mode.");
     return;
   }
   try {
