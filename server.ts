@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -13,6 +14,18 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// Ensure your CORS configuration explicitly safelists your live frontends
+app.use(cors({
+  origin: [
+    'https://all-legal-matters-51080746448.us-east1.run.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://ais-dev-xabfdbnimavnerjahn5ai7-794436270631.us-east1.run.app',
+    'https://ais-pre-xabfdbnimavnerjahn5ai7-794436270631.us-east1.run.app'
+  ],
+  credentials: true
+}));
 
 // Setup JSON parsing with a verification callback to capture raw body for Stripe webhook signature validation
 app.use(express.json({
@@ -138,6 +151,18 @@ const database = {
 };
 
 // --- API ENDPOINTS ---
+
+const signUpController = handleRegistration;
+
+// PUBLIC ACCESSIBLE ROUTES (Place BEFORE session validation)
+app.post('/api/auth/signup', signUpController);
+app.post('/api/subscriptions', createSubscriptionController);
+
+// SECURE WALL / MIDDLEWARE (Place AFTER public routes)
+app.use((req, res, next) => {
+  // Your JWT/Session evaluation goes here for subsequent protected endpoints
+  next();
+});
 
 // Fetch jurisdictions list & regional data
 app.get("/api/jurisdictions", (req, res) => {
@@ -1254,7 +1279,7 @@ app.post("/api/mongoose/users", async (req, res) => {
 // --- CUSTOM SECURE REGISTER ENDPOINT WITH BCRYPT PARSING AND MONGOOSE PERSISTENCE ---
 const SALT_ROUNDS = 12;
 
-const handleRegistration = async (req: any, res: any) => {
+async function handleRegistration(req: any, res: any) {
   try {
     const { fullName, email, password } = req.body;
 
@@ -1295,7 +1320,13 @@ const handleRegistration = async (req: any, res: any) => {
     const newUser = new User({
       fullName,
       email: lowerEmail,
-      password: hashedPassword
+      password: hashedPassword,
+      role: req.body.role || "user",
+      permissions: req.body.permissions || {
+        read: true,
+        write: true,
+        subscribe: true
+      }
     });
 
     let savedUser: any = null;
@@ -1351,10 +1382,45 @@ const handleRegistration = async (req: any, res: any) => {
     console.error('Registration Error:', error);
     return res.status(500).json({ error: 'An internal server error occurred.' });
   }
-};
+}
+
+async function createSubscriptionController(req: any, res: any) {
+  try {
+    const { email, planType, stripeToken, userId } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Email is required." });
+    }
+    const subscriptionId = "sub_" + Math.random().toString(36).substring(2, 9);
+    const newSubscription = {
+      email,
+      subscriptionId,
+      status: "active",
+      priceId: planType === "yearly" ? "price_yearly" : "price_monthly",
+      userId: userId || "",
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    };
+    database.subscriptions.push(newSubscription);
+    
+    database.systemLogs.push({
+      timestamp: new Date().toISOString(),
+      event: `Direct subscription created for ${email}`,
+      status: "SUCCESS"
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Subscription created successfully",
+      subscription: newSubscription
+    });
+  } catch (error: any) {
+    console.error("Subscription creation failed:", error);
+    res.status(500).json({ error: error.message || "Failed to create subscription" });
+  }
+}
 
 app.post('/register', handleRegistration);
 app.post('/api/register', handleRegistration);
+app.post('/api/auth/signup', handleRegistration);
 app.post('/api/mongoose/users/register', handleRegistration);
 
 // 3. Query all users stored via Mongoose schema

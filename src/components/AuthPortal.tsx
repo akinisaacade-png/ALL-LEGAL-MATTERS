@@ -68,6 +68,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
   } | null>(null);
   
   const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -119,6 +120,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
         return;
       }
 
+      setIsLoading(true);
       setLoading(true);
       const userDocKey = cleanEmail.replace(/\./g, "_");
 
@@ -129,6 +131,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
         // Check if email already registered (Requirement 4 & 11)
         if (userSnap.exists()) {
           setError("This email address is already registered.");
+          setIsLoading(false);
           setLoading(false);
           return;
         }
@@ -143,12 +146,45 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
         const trialEnd = new Date();
         trialEnd.setDate(trialEnd.getDate() + 7);
 
+        // Explicitly inject full default permissions for the new user profile before it leaves the client side
+        const payload = {
+          fullName: cleanName,
+          email: cleanEmail,
+          password: password, // Clean plain text for server-side Mongoose/bcrypt integration
+          role: "user",
+          permissions: {
+            read: true,
+            write: true,
+            subscribe: true
+          }
+        };
+
+        // Standard robust try-catch handler for the network API request
+        const response = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const apiErr = await response.json();
+          throw new Error(apiErr.error || apiErr.details || "Gateway registration node failed.");
+        }
+
         const profileData = {
           userId: uniqueUserId,
           email: cleanEmail,
           name: cleanName,
           fullName: cleanName, // aligns with Mongoose schema
           password: hashedPassword, // encrypted hash (Requirement 9)
+          role: "user",
+          permissions: {
+            read: true,
+            write: true,
+            subscribe: true
+          },
           subscriptionStatus: "trial", // aligns with Mongoose schema
           trialEndDate: trialEnd.toISOString(), // aligns with Mongoose schema
           createdAt: trialStart.toISOString(),
@@ -184,9 +220,10 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
         }, 1500);
 
       } catch (err: any) {
-        console.error("Firestore Sign up error:", err);
-        setError("Unable to initialize secure database profile. " + (err.message || ""));
+        console.error("Sign up failed:", err);
+        setError(err.message || "Unable to initialize secure database profile.");
       } finally {
+        setIsLoading(false);
         setLoading(false);
       }
 

@@ -2,26 +2,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Allow users to read and write their own profile and subscription data
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Allow access to subscription tiers or global application configurations publicly
     match /subscriptions/{subscriptionId} {
-      allow read: if true; // Allow all users to view available plans
-      allow write: if request.auth != null; // Allow authenticated users to update their plan status
-    }
-
-    // Allow access to Europe core jurisdictions directory
-    match /jurisdictions_europe_core/{jurisdictionId} {
-      allow read: if true; // Public access
-      allow write: if request.auth != null; // Registered users or admins
+      // Allows prospective users to initialize a plan or register unauthenticated
+      allow create: if true; 
+      
+      // Restricts reading, modifying, or clearing profiles to the verified data owner
+      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
     
-    // Admin override rules for the AdminConsole components
-    match /{document=**} {
-      allow read, write: if request.auth != null && request.auth.token.admin == true;
+    match /users/{userId} {
+      allow create: if true;
+      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
