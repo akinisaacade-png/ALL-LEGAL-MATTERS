@@ -674,7 +674,7 @@ app.get("/api/bookings", (req, res) => {
 });
 
 app.post("/api/bookings/create", (req, res) => {
-  const { lawyerId, lawyerName, duration, date, time, retainerFee } = req.body;
+  const { lawyerId, lawyerName, duration, date, time, retainerFee, caseNotes, legalQuestions } = req.body;
 
   const newBooking = {
     id: `booking-${Date.now()}`,
@@ -685,7 +685,9 @@ app.post("/api/bookings/create", (req, res) => {
     time,
     retainerFee: parseFloat(retainerFee) || 250,
     status: "Confirmed",
-    syncedWithCalendar: true
+    syncedWithCalendar: true,
+    caseNotes: caseNotes || "",
+    legalQuestions: legalQuestions || ""
   };
 
   database.bookings.push(newBooking);

@@ -82,6 +82,8 @@ export interface ConsultationBooking {
   retainerFee: number;
   status: string;
   syncedWithCalendar: boolean;
+  caseNotes?: string;
+  legalQuestions?: string;
 }
 
 export interface Attorney {

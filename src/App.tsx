@@ -274,6 +274,8 @@ export default function App() {
   const [bookingDate, setBookingDate] = useState<string>("2026-06-22");
   const [bookingTime, setBookingTime] = useState<string>("10:00 AM");
   const [bookingDuration, setBookingDuration] = useState<number>(60);
+  const [bookingCaseNotes, setBookingCaseNotes] = useState<string>("");
+  const [bookingLegalQuestions, setBookingLegalQuestions] = useState<string>("");
   const [googleSync, setGoogleSync] = useState<boolean>(true);
   const [bookingResult, setBookingResult] = useState<string | null>(null);
 
@@ -1326,7 +1328,9 @@ export default function App() {
           duration: bookingDuration,
           date: bookingDate,
           time: bookingTime,
-          retainerFee: computedFee
+          retainerFee: computedFee,
+          caseNotes: bookingCaseNotes,
+          legalQuestions: bookingLegalQuestions
         })
       });
       const resData = await response.json();
@@ -1342,6 +1346,8 @@ export default function App() {
 
         setBookingResult(`Success! Verified consultation scheduled on ${bookingDate} at ${bookingTime}. Retainer ($${computedFee}) processed successfully.`);
         showToast(`Consultation with ${selectedAttorney.name} booked.`);
+        setBookingCaseNotes("");
+        setBookingLegalQuestions("");
         if (googleSync) {
           showToast("Sync trigger: Calendar appointment created inside Google Workspace via prebuilt background action.");
         }
@@ -4247,6 +4253,32 @@ This power is durable and persists through any subsequent incapacity.`;
                         </div>
                       </div>
 
+                      {/* Case Notes & Specific Legal Questions */}
+                      <div className="space-y-2 border-t border-slate-800/60 pt-2.5">
+                        <div>
+                          <label className="text-[10px] text-slate-400 font-bold block mb-1 font-sans">
+                            Case Notes / Background (for attorney review):
+                          </label>
+                          <textarea
+                            value={bookingCaseNotes}
+                            onChange={(e) => setBookingCaseNotes(e.target.value)}
+                            placeholder="Provide brief context or background of your legal matter (optional)..."
+                            className="w-full bg-slate-950 text-xs text-slate-100 p-2 border border-slate-700 rounded-md outline-none h-16 resize-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 font-bold block mb-1 font-sans">
+                            Specific Legal Questions:
+                          </label>
+                          <textarea
+                            value={bookingLegalQuestions}
+                            onChange={(e) => setBookingLegalQuestions(e.target.value)}
+                            placeholder="List specific questions you'd like addressed (optional)..."
+                            className="w-full bg-slate-950 text-xs text-slate-100 p-2 border border-slate-700 rounded-md outline-none h-16 resize-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
                       {/* Rate Limit Analysis Box */}
                       {selectedAttorney && (
                         <div className="bg-slate-950 p-2.5 rounded border border-slate-805 space-y-1">
@@ -4337,19 +4369,38 @@ This power is durable and persists through any subsequent incapacity.`;
                     {bookingSubTab === "upcoming" ? (
                       <div className="space-y-2 max-h-[220px] overflow-y-auto animate-fadeIn">
                         {bookings.map((bk) => (
-                          <div key={bk.id} className="p-3 bg-slate-900 border border-slate-800 rounded-md text-[11px] flex items-center justify-between">
-                            <div>
-                              <p className="font-extrabold text-white uppercase font-sans">{bk.lawyerName}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">{bk.date} @ {bk.time} ({bk.duration} mins)</p>
+                          <div key={bk.id} className="p-3 bg-slate-900 border border-slate-800 rounded-md text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-extrabold text-white uppercase font-sans">{bk.lawyerName}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">{bk.date} @ {bk.time} ({bk.duration} mins)</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="bg-emerald-950 border border-emerald-500 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1">CONFIRMED</span>
+                                {bk.syncedWithCalendar && (
+                                  <span className="text-[9px] text-indigo-400 font-bold flex items-center gap-1 justify-end">
+                                    <CheckCircle className="w-3 h-3 text-indigo-400" /> Workspace Synced
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <span className="bg-emerald-950 border border-emerald-500 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1">CONFIRMED</span>
-                              {bk.syncedWithCalendar && (
-                                <span className="text-[9px] text-indigo-400 font-bold flex items-center gap-1">
-                                  <CheckCircle className="w-3 h-3 text-indigo-400" /> Workspace Synced
-                                </span>
-                              )}
-                            </div>
+
+                            {(bk.caseNotes || bk.legalQuestions) && (
+                              <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
+                                {bk.caseNotes && (
+                                  <div className="bg-slate-950/50 p-2 rounded border border-slate-800">
+                                    <p className="text-[9px] font-black uppercase text-indigo-400 tracking-wider font-mono">Case Notes:</p>
+                                    <p className="text-[10.5px] text-slate-300 font-sans mt-0.5 whitespace-pre-wrap">{bk.caseNotes}</p>
+                                  </div>
+                                )}
+                                {bk.legalQuestions && (
+                                  <div className="bg-slate-950/50 p-2 rounded border border-slate-800">
+                                    <p className="text-[9px] font-black uppercase text-emerald-400 tracking-wider font-mono">Specific Questions:</p>
+                                    <p className="text-[10.5px] text-slate-300 font-sans mt-0.5 whitespace-pre-wrap">{bk.legalQuestions}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
 
@@ -4360,16 +4411,35 @@ This power is durable and persists through any subsequent incapacity.`;
                     ) : (
                       <div className="space-y-2 max-h-[220px] overflow-y-auto animate-fadeIn">
                         {pastBookings.map((bk) => (
-                          <div key={bk.id} className="p-3 bg-slate-900/60 border border-slate-800 rounded-md text-[11px] flex items-center justify-between">
-                            <div>
-                              <p className="font-extrabold text-slate-300 uppercase font-sans">{bk.lawyerName}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">{bk.date} @ {bk.time} ({bk.duration} mins)</p>
-                              <p className="text-[9.5px] text-slate-500 font-mono">Retainer cleared: ${bk.retainerFee}</p>
+                          <div key={bk.id} className="p-3 bg-slate-900/60 border border-slate-800 rounded-md text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-extrabold text-slate-300 uppercase font-sans">{bk.lawyerName}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">{bk.date} @ {bk.time} ({bk.duration} mins)</p>
+                                <p className="text-[9.5px] text-slate-500 font-mono">Retainer cleared: ${bk.retainerFee}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="bg-slate-800 border border-slate-700 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1">COMPLETED</span>
+                                <span className="text-[8.5px] text-slate-500 font-semibold block font-sans">Audit Invoice Released</span>
+                              </div>
                             </div>
-                            <div className="text-right shrink-0">
-                              <span className="bg-slate-800 border border-slate-700 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1">COMPLETED</span>
-                              <span className="text-[8.5px] text-slate-500 font-semibold block font-sans font-sans font-semibold">Audit Invoice Released</span>
-                            </div>
+
+                            {(bk.caseNotes || bk.legalQuestions) && (
+                              <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
+                                {bk.caseNotes && (
+                                  <div className="bg-slate-950/40 p-2 rounded border border-slate-800">
+                                    <p className="text-[9px] font-black uppercase text-indigo-400 tracking-wider font-mono">Case Notes:</p>
+                                    <p className="text-[10.5px] text-slate-400 font-sans mt-0.5 whitespace-pre-wrap">{bk.caseNotes}</p>
+                                  </div>
+                                )}
+                                {bk.legalQuestions && (
+                                  <div className="bg-slate-950/40 p-2 rounded border border-slate-800">
+                                    <p className="text-[9px] font-black uppercase text-emerald-400 tracking-wider font-mono">Specific Questions:</p>
+                                    <p className="text-[10.5px] text-slate-400 font-sans mt-0.5 whitespace-pre-wrap">{bk.legalQuestions}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
