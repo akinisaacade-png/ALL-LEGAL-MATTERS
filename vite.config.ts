@@ -15,6 +15,7 @@ export default defineConfig(() => {
       hmr: {
         // Configures Vite to use the secure protocol and look for standard ports over the proxy
         protocol: 'wss',
+        host: 'localhost',
         clientPort: 443,
       },
     },

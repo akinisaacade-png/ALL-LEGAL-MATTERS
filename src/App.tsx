@@ -62,6 +62,35 @@ interface SystemLogMsg {
   status: string;
 }
 
+// Helper to perform fetch and safely handle JSON parsing with rate limits gracefully
+async function safeFetchJson<T>(url: string, options?: RequestInit): Promise<T | null> {
+  try {
+    const response = await fetch(url, options);
+    
+    // Explicitly catch rate limits or server breakdowns before reading as JSON
+    if (response.status === 429 || !response.ok) {
+      console.warn(`API responded with status ${response.status}. Skipping JSON serialization parsing.`);
+      return null;
+    }
+
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const plainText = await response.text();
+      if (plainText.includes("Rate exceeded") || plainText.includes("Too Many Requests")) {
+        console.warn(`Response from ${url} indicated rate limit reached.`);
+        return null; // Gracefully catch plain text limit triggers
+      }
+      console.warn(`Response from ${url} was not JSON: ${plainText.slice(0, 100)}`);
+      return null;
+    }
+
+    return await response.json() as T;
+  } catch (error) {
+    console.error("Intercepted network parse failure safely:", error);
+    return null;
+  }
+}
+
 export default function App() {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<"directory" | "counsel" | "vault" | "compliance" | "forms" | "consultations" | "multimodal" | "maintenance" | "translation" | "billing" | "auth" | "admin">("directory");
@@ -175,6 +204,9 @@ export default function App() {
   const [activeEditContent, setActiveEditContent] = useState<string>(" ");
   const [changeSummaryText, setChangeSummaryText] = useState<string>("");
   const [activeComplianceAlerts, setActiveComplianceAlerts] = useState<ComplianceAlert[]>([]);
+  const [hasDraftToRestore, setHasDraftToRestore] = useState<boolean>(false);
+  const [draftTimestamp, setDraftTimestamp] = useState<number | null>(null);
+  const [lastAutosavedTime, setLastAutosavedTime] = useState<string | null>(null);
 
   // Interactive Document Generator
   const [activeTemplate, setActiveTemplate] = useState<"nda" | "will" | "sublease" | "power_of_attorney">("nda");
@@ -719,14 +751,9 @@ export default function App() {
   };
 
   const fetchSystemLogs = async () => {
-    try {
-      const response = await fetch("/api/system/logs");
-      const resData = await response.json();
-      if (resData && resData.logs) {
-        setSystemLogs(resData.logs);
-      }
-    } catch (e) {
-      console.error("Error retrieving system logs:", e);
+    const resData = await safeFetchJson<{ logs: SystemLogMsg[] }>("/api/system/logs");
+    if (resData && resData.logs) {
+      setSystemLogs(resData.logs);
     }
   };
 
@@ -741,6 +768,28 @@ export default function App() {
     const computedAlerts = scanDocumentCompliance(selectedVaultDoc.content, currentJur);
     setActiveComplianceAlerts(computedAlerts);
   }, [selectedVaultDoc?.id, selectedVaultDoc?.content, selectedCountry, selectedSubnational]);
+
+  // Periodic Auto-save hook for Document Editor
+  useEffect(() => {
+    if (!isEditingDoc || !selectedVaultDoc) {
+      setLastAutosavedTime(null);
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      if (activeEditContent && activeEditContent !== selectedVaultDoc.content) {
+        const key = `document_autosave_${selectedVaultDoc.id}`;
+        localStorage.setItem(key, JSON.stringify({
+          content: activeEditContent,
+          timestamp: Date.now()
+        }));
+        const now = new Date();
+        setLastAutosavedTime(now.toLocaleTimeString());
+      }
+    }, 5000); // Trigger auto-save every 5 seconds
+
+    return () => clearInterval(intervalId);
+  }, [isEditingDoc, selectedVaultDoc?.id, activeEditContent, selectedVaultDoc?.content]);
 
   // Chat Trigger
   const handleSendChat = async (e?: React.FormEvent) => {
@@ -815,6 +864,9 @@ export default function App() {
         showToast(`💾 Saved Revision for ${selectedVaultDoc.name} successfully.`);
         setIsEditingDoc(false);
         setChangeSummaryText("");
+        localStorage.removeItem(`document_autosave_${selectedVaultDoc.id}`);
+        setHasDraftToRestore(false);
+        setLastAutosavedTime(null);
       } else {
         showToast("Error saving revision.");
       }
@@ -856,6 +908,9 @@ export default function App() {
       showToast("💾 Saved locally in offline persistent storage cache.");
       setIsEditingDoc(false);
       setChangeSummaryText("");
+      localStorage.removeItem(`document_autosave_${updatedDoc.id}`);
+      setHasDraftToRestore(false);
+      setLastAutosavedTime(null);
     }
   };
 
@@ -3063,6 +3118,24 @@ This power is durable and persists through any subsequent incapacity.`;
                                       type="button"
                                       onClick={() => {
                                         setIsEditingDoc(true);
+                                        const key = `document_autosave_${selectedVaultDoc.id}`;
+                                        const savedDraft = localStorage.getItem(key);
+                                        if (savedDraft) {
+                                          try {
+                                            const parsed = JSON.parse(savedDraft);
+                                            if (parsed && parsed.content && parsed.content !== selectedVaultDoc.content) {
+                                              setHasDraftToRestore(true);
+                                              setDraftTimestamp(parsed.timestamp);
+                                            } else {
+                                              setHasDraftToRestore(false);
+                                            }
+                                          } catch (e) {
+                                            console.warn("Could not parse saved draft", e);
+                                            setHasDraftToRestore(false);
+                                          }
+                                        } else {
+                                          setHasDraftToRestore(false);
+                                        }
                                         setActiveEditContent(selectedVaultDoc.content);
                                         setChangeSummaryText("");
                                       }}
@@ -3108,7 +3181,70 @@ This power is durable and persists through any subsequent incapacity.`;
                               </p>
                             ) : (
                               <form onSubmit={handleEditDoc} className="space-y-3">
-                                <span className="text-[10px] font-mono font-bold text-slate-400 block mb-1">Directly Modify Agreement Texts:</span>
+                                {isEditingDoc && hasDraftToRestore && (
+                                  <div className="bg-amber-950/40 border border-amber-500/30 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                        <span className="text-[11px] font-bold text-amber-300 font-mono uppercase tracking-wider">Unsaved Auto-saved Draft Found</span>
+                                      </div>
+                                      <p className="text-[11px] text-slate-300">
+                                        A pending revision from {draftTimestamp ? new Date(draftTimestamp).toLocaleString() : "a previous session"} is available.
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const key = `document_autosave_${selectedVaultDoc?.id}`;
+                                          const savedDraft = localStorage.getItem(key);
+                                          if (savedDraft) {
+                                            try {
+                                              const parsed = JSON.parse(savedDraft);
+                                              if (parsed && parsed.content) {
+                                                setActiveEditContent(parsed.content);
+                                                showToast("🔄 Unsaved draft restored.");
+                                              }
+                                            } catch (e) {
+                                              console.error("Failed to recover content", e);
+                                            }
+                                          }
+                                          setHasDraftToRestore(false);
+                                        }}
+                                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-black rounded transition-all shadow uppercase tracking-wider"
+                                      >
+                                        Restore Draft
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (selectedVaultDoc) {
+                                            localStorage.removeItem(`document_autosave_${selectedVaultDoc.id}`);
+                                          }
+                                          setHasDraftToRestore(false);
+                                          showToast("Draft discarded.");
+                                        }}
+                                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded transition-all border border-slate-700"
+                                      >
+                                        Discard
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-mono font-bold text-slate-400 block mb-1">Directly Modify Agreement Texts:</span>
+                                  {lastAutosavedTime ? (
+                                    <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1.5 py-0.5 rounded flex items-center gap-1 leading-none">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                      Auto-saved {lastAutosavedTime}
+                                    </span>
+                                  ) : (
+                                    activeEditContent !== selectedVaultDoc?.content && (
+                                      <span className="text-[9px] font-mono text-slate-400 italic">Editing...</span>
+                                    )
+                                  )}
+                                </div>
                                 <textarea
                                   value={activeEditContent}
                                   onChange={(e) => setActiveEditContent(e.target.value)}
@@ -3131,7 +3267,22 @@ This power is durable and persists through any subsequent incapacity.`;
                                 <div className="flex justify-end gap-2 pt-1">
                                   <button
                                     type="button"
-                                    onClick={() => setIsEditingDoc(false)}
+                                    onClick={() => {
+                                      if (activeEditContent && activeEditContent !== selectedVaultDoc?.content) {
+                                        if (confirm("Discard unsaved changes? This will delete your current editing session progress.")) {
+                                          setIsEditingDoc(false);
+                                          if (selectedVaultDoc) {
+                                            localStorage.removeItem(`document_autosave_${selectedVaultDoc.id}`);
+                                          }
+                                          setHasDraftToRestore(false);
+                                          setLastAutosavedTime(null);
+                                        }
+                                      } else {
+                                        setIsEditingDoc(false);
+                                        setHasDraftToRestore(false);
+                                        setLastAutosavedTime(null);
+                                      }
+                                    }}
                                     className="px-3 py-1.5 bg-slate-800 text-slate-300 text-[10px] font-bold rounded hover:bg-slate-755 transition-all"
                                   >
                                     Cancel

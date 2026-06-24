@@ -3,16 +3,23 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     match /subscriptions/{subscriptionId} {
-      // Allows prospective users to initialize a plan or register unauthenticated
-      allow create: if true; 
-      
-      // Restricts reading, modifying, or clearing profiles to the verified data owner
-      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read, write: if true;
     }
     
     match /users/{userId} {
-      allow create: if true;
-      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if true;
+    }
+
+    match /documents/{documentId} {
+      allow read, write: if true;
+    }
+
+    match /bookings/{bookingId} {
+      allow read, write: if true;
+    }
+
+    match /jurisdictions_europe_core/{jurisdictionId} {
+      allow read, write: if true;
     }
   }
 }
