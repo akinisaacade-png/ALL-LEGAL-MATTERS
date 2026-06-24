@@ -88,6 +88,23 @@
         "read": "true",
         "write": "true"
       }
+    },
+    "Europe_subnational": {
+      "fields": {
+        "id": { "type": "string" },
+        "country_id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "constitutional_basis": { "type": "string" },
+        "legislation_url": { "type": "string" },
+        "parliament_url": { "type": "string" },
+        "highest_court_url": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
     }
   }
 }

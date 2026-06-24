@@ -674,7 +674,7 @@ app.get("/api/bookings", (req, res) => {
 });
 
 app.post("/api/bookings/create", (req, res) => {
-  const { lawyerId, lawyerName, duration, date, time, retainerFee, caseNotes, legalQuestions } = req.body;
+  const { lawyerId, lawyerName, duration, date, time, retainerFee, caseNotes, legalQuestions, smsReminder, emailReminder, reminderPhone, reminderEmail } = req.body;
 
   const newBooking = {
     id: `booking-${Date.now()}`,
@@ -687,7 +687,11 @@ app.post("/api/bookings/create", (req, res) => {
     status: "Confirmed",
     syncedWithCalendar: true,
     caseNotes: caseNotes || "",
-    legalQuestions: legalQuestions || ""
+    legalQuestions: legalQuestions || "",
+    smsReminder: !!smsReminder,
+    emailReminder: !!emailReminder,
+    reminderPhone: reminderPhone || "",
+    reminderEmail: reminderEmail || ""
   };
 
   database.bookings.push(newBooking);

@@ -43,17 +43,40 @@ import {
   Award,
   Shield,
   Tags,
+  Copy,
+  Mail,
+  Send,
+  Smartphone,
+  Play,
+  Pause,
+  TrendingUp,
+  PieChart as PieChartIcon,
+  HelpCircle,
+  Users,
+  Share2,
 } from "lucide-react";
 import { JURISDICTIONS_DATA, MOCH_ATTORNEYS, LEGAL_DOMAINS } from "./data";
 import { SovereignJurisdiction, LegalDocument, ConsultationBooking, ChatMessage, Attorney, DocumentVersion } from "./types";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  Legend
+} from "recharts";
 import { collection, doc, getDocs, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import ComplianceDashboard from "./components/ComplianceDashboard";
 import AuthPortal from "./components/AuthPortal";
 import AdminConsole from "./components/AdminConsole";
 import EuropeJurisdictionsPanel from "./components/EuropeJurisdictionsPanel";
-import { seedEuropeJurisdictions } from "./utils/europeJurisdictions";
+import { seedEuropeJurisdictions, seedEuropeSubnationalJurisdictions } from "./utils/europeJurisdictions";
 import { scanDocumentCompliance, ComplianceAlert } from "./complianceEngine";
 
 interface SystemLogMsg {
@@ -235,9 +258,68 @@ export default function App() {
   const [attorneys, setAttorneys] = useState<Attorney[]>(MOCH_ATTORNEYS);
   const [selectedAttorney, setSelectedAttorney] = useState<Attorney>(MOCH_ATTORNEYS[0]);
   const [attorneySearchQuery, setAttorneySearchQuery] = useState<string>("");
-  const [bookingSubTab, setBookingSubTab] = useState<"upcoming" | "past">("upcoming");
+  const [bookingSubTab, setBookingSubTab] = useState<"upcoming" | "past" | "analytics">("upcoming");
   const [showAddAttorneyForm, setShowAddAttorneyForm] = useState<boolean>(false);
   
+  // SMS/Email Reminders states
+  const [smsReminder, setSmsReminder] = useState<boolean>(false);
+  const [emailReminder, setEmailReminder] = useState<boolean>(false);
+  const [reminderPhone, setReminderPhone] = useState<string>("");
+  const [reminderEmail, setReminderEmail] = useState<string>("");
+
+  // Post-consultation feedback states
+  const [ratingBookingId, setRatingBookingId] = useState<string | null>(null);
+  const [feedbackRating, setFeedbackRating] = useState<number>(5);
+  const [feedbackComment, setFeedbackComment] = useState<string>("");
+
+  useEffect(() => {
+    if (currentUser?.email) {
+      setReminderEmail(currentUser.email);
+    } else {
+      setReminderEmail("akinisaacade@gmail.com");
+    }
+  }, [currentUser]);
+
+  const getDayOfWeek = (dateString: string) => {
+    if (!dateString) return "Mon";
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const date = new Date(dateString + "T12:00:00");
+    return days[date.getDay()];
+  };
+
+  const toggleAttorneyHour = (day: string, hour: string) => {
+    setAttorneys((prev) =>
+      prev.map((att) => {
+        if (att.id === selectedAttorney.id) {
+          const existingHours = att.availabilityHours || {};
+          const dayHours = existingHours[day] || [];
+          const updatedDayHours = dayHours.includes(hour)
+            ? dayHours.filter((h) => h !== hour)
+            : [...dayHours, hour];
+          const newHours = { ...existingHours, [day]: updatedDayHours };
+
+          const newAvailabilityMap = { ...att.availabilityMap };
+          if (["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].includes(day)) {
+            newAvailabilityMap[day] = Math.round((updatedDayHours.length / 5) * 100);
+          }
+
+          const updatedAtt = {
+            ...att,
+            availabilityHours: newHours,
+            availabilityMap: newAvailabilityMap,
+          };
+
+          if (selectedAttorney.id === att.id) {
+            setSelectedAttorney(updatedAtt);
+          }
+          return updatedAtt;
+        }
+        return att;
+      })
+    );
+    showToast(`Updated weekly availability hours for ${selectedAttorney.name} on ${day}.`);
+  };
+
   // Add Attorney form state
   const [newAttName, setNewAttName] = useState<string>("");
   const [newAttTitle, setNewAttTitle] = useState<string>("");
@@ -257,7 +339,9 @@ export default function App() {
       time: "11:30 AM",
       retainerFee: 280,
       status: "Completed",
-      syncedWithCalendar: true
+      syncedWithCalendar: true,
+      rating: 5,
+      feedbackComment: "Superb advice regarding local trade and tariffs!"
     },
     {
       id: "booking-past-2",
@@ -268,7 +352,9 @@ export default function App() {
       time: "02:00 PM",
       retainerFee: 450,
       status: "Completed",
-      syncedWithCalendar: true
+      syncedWithCalendar: true,
+      rating: 4,
+      feedbackComment: "Very professional real estate overview of Mexican property laws."
     }
   ]);
   const [bookingDate, setBookingDate] = useState<string>("2026-06-22");
@@ -333,6 +419,23 @@ export default function App() {
   const [simulatedTier, setSimulatedTier] = useState<"real" | "trial" | "monthly" | "yearly" | "expired">("real");
   const [billingSubTab, setBillingSubTab] = useState<"terminal" | "schema">("terminal");
 
+  // Digital Marketing CRM Custom UI States
+  const [selectedCrmTab, setSelectedCrmTab] = useState<"dashboard" | "listing" | "sequences" | "social" | "faqs" | "templates" | "brand">("dashboard");
+  const [selectedCrmEmail, setSelectedCrmEmail] = useState<number>(1);
+  const [selectedCrmSocial, setSelectedCrmSocial] = useState<string>("linkedin");
+  const [selectedCrmFaq, setSelectedCrmFaq] = useState<number | null>(null);
+  const [crmLeadsCount, setCrmLeadsCount] = useState<number>(2480);
+  const [crmOppCount, setCrmOppCount] = useState<number>(142);
+  const [crmPipelineValue, setCrmPipelineValue] = useState<number>(458000);
+  const [crmRevenue, setCrmRevenue] = useState<number>(189000);
+  const [crmActivities, setCrmActivities] = useState<Array<{id: string, time: string, text: string, type: string}>>([
+    { id: "act-1", time: "Just now", text: "New Lead captured from Google Ads: Michael K.", type: "lead" },
+    { id: "act-2", time: "5 mins ago", text: "AI workflow triggered: Send Welcome Sequence to Michael K.", type: "system" },
+    { id: "act-3", time: "25 mins ago", text: "Lead upgraded: Sarah L. moved to Qualified stage", type: "pipeline" },
+    { id: "act-4", time: "1 hour ago", text: "Opportunity closed: 5-user Growth Plan subscription finalized ($2,400/yr)", type: "revenue" },
+    { id: "act-5", time: "3 hours ago", text: "Facebook Ad campaign optimization: Click-Through-Rate improved to 3.24%", type: "campaign" }
+  ]);
+
   // Dynamically resolve subscription or trial state based on simulation selection
   const effectiveSubscription = React.useMemo(() => {
     if (simulatedTier === "monthly") {
@@ -389,9 +492,12 @@ export default function App() {
     fetchBookings();
     fetchSystemLogs();
     
-    // Auto-seed European Core Jurisdictions in Firestore
-    seedEuropeJurisdictions()
-      .then(() => console.log("Europe Jurisdictions auto-seeded / verified in Firestore"))
+    // Auto-seed European Core and Subnational Jurisdictions in Firestore
+    Promise.all([
+      seedEuropeJurisdictions(),
+      seedEuropeSubnationalJurisdictions()
+    ])
+      .then(() => console.log("Europe Jurisdictions and Subnationals auto-seeded / verified in Firestore"))
       .catch((err) => console.error("Error auto-seeding Europe jurisdictions:", err));
 
     const handleOnline = () => {
@@ -1316,6 +1422,10 @@ export default function App() {
   // Create Consultation Booking Hook
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!bookingTime) {
+      showToast("Please select an available appointment hour block.");
+      return;
+    }
     const computedFee = selectedAttorney.hourlyRate * (bookingDuration / 60);
 
     try {
@@ -1330,7 +1440,11 @@ export default function App() {
           time: bookingTime,
           retainerFee: computedFee,
           caseNotes: bookingCaseNotes,
-          legalQuestions: bookingLegalQuestions
+          legalQuestions: bookingLegalQuestions,
+          smsReminder,
+          emailReminder,
+          reminderPhone: smsReminder ? reminderPhone : "",
+          reminderEmail: emailReminder ? reminderEmail : ""
         })
       });
       const resData = await response.json();
@@ -1348,6 +1462,9 @@ export default function App() {
         showToast(`Consultation with ${selectedAttorney.name} booked.`);
         setBookingCaseNotes("");
         setBookingLegalQuestions("");
+        setSmsReminder(false);
+        setEmailReminder(false);
+        setReminderPhone("");
         if (googleSync) {
           showToast("Sync trigger: Calendar appointment created inside Google Workspace via prebuilt background action.");
         }
@@ -1355,6 +1472,55 @@ export default function App() {
       }
     } catch (err) {
       showToast("Scheduling portal transient error.");
+    }
+  };
+
+  const handleFeedbackSubmit = async (bookingId: string) => {
+    try {
+      const updatedPast = pastBookings.map((bk) => {
+        if (bk.id === bookingId) {
+          const updated = {
+            ...bk,
+            rating: feedbackRating,
+            feedbackComment: feedbackComment,
+          };
+          setDoc(doc(db, "bookings", bookingId), updated, { merge: true }).catch((err) =>
+            console.warn("Firestore feedback sync error:", err)
+          );
+          return updated;
+        }
+        return bk;
+      });
+      setPastBookings(updatedPast);
+
+      // Find original booking to know lawyerId
+      const targetBooking = pastBookings.find((bk) => bk.id === bookingId) || bookings.find((bk) => bk.id === bookingId);
+      if (targetBooking) {
+        setAttorneys((prev) =>
+          prev.map((att) => {
+            if (att.id === targetBooking.lawyerId) {
+              const newReviews = feedbackComment ? [feedbackComment, ...att.reviews] : att.reviews;
+              const newRating = parseFloat(((att.rating * 4 + feedbackRating) / 5).toFixed(1));
+              const updatedAtt = {
+                ...att,
+                rating: newRating,
+                reviews: newReviews,
+              };
+              if (selectedAttorney.id === att.id) {
+                setSelectedAttorney(updatedAtt);
+              }
+              return updatedAtt;
+            }
+            return att;
+          })
+        );
+      }
+
+      setRatingBookingId(null);
+      setFeedbackComment("");
+      showToast("Thank you! Your post-consultation feedback has been recorded.");
+    } catch (e) {
+      showToast("Feedback submission error.");
     }
   };
 
@@ -2188,193 +2354,1125 @@ This power is durable and persists through any subsequent incapacity.`;
                 </div>
 
               {/* Grid split showing Country core info and subnational state/province deep-dive */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
-                {/* Global Sovereign Level */}
-                <div className="lg:col-span-7 bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-6">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <div>
-                      <h3 className="text-2xl font-black text-white">{currentJurisdictionObj.name}</h3>
-                      <p className="text-xs text-amber-400 font-mono mt-1 font-bold">
-                        {currentJurisdictionObj.legal_system}
-                      </p>
-                    </div>
-                    <span className="text-4xl font-extrabold text-slate-800">{currentJurisdictionObj.id}</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
-                      <div className="flex items-center gap-2 mb-2">
-                        <FileText className="w-4 h-4 text-indigo-400" />
-                        <span className="text-xs font-black uppercase text-slate-300">Constitutional Source</span>
-                      </div>
-                      <p className="text-xs text-slate-100 font-bold mb-3">{currentJurisdictionObj.constitution_name}</p>
-                      <a
-                        href={currentJurisdictionObj.constitution_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
-                      >
-                        Official Constitution Link <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Scale className="w-4 h-4 text-emerald-400" />
-                        <span className="text-xs font-black uppercase text-slate-300">Legislation Portal</span>
-                      </div>
-                      <p className="text-xs text-slate-100 font-bold mb-3">{currentJurisdictionObj.federal_legislation_portal_name}</p>
-                      <a
-                        href={currentJurisdictionObj.federal_legislation_portal_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
-                      >
-                        Official Justice Laws <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Landmark className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-black uppercase text-slate-300">Highest Court</span>
-                      </div>
-                      <p className="text-xs text-slate-100 font-bold mb-3">{currentJurisdictionObj.supreme_court_name}</p>
-                      <a
-                        href={currentJurisdictionObj.supreme_court_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
-                      >
-                        Supreme Court website <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
-                      <div className="flex items-center gap-2 mb-2">
-                        <BookOpen className="w-4 h-4 text-teal-400" />
-                        <span className="text-xs font-black uppercase text-slate-300">Comparative Research</span>
-                      </div>
-                      <p className="text-xs text-slate-100 font-bold mb-3">LII Aggregated Gateway Guide</p>
-                      <a
-                        href={currentJurisdictionObj.research_guide}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
-                      >
-                        Access Repository Link <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Trigger to send selection target straight into AI chat assistant */}
-                  <div className="bg-gradient-to-r from-indigo-950 to-slate-900 p-4 rounded-lg border border-indigo-500/20 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Grounded AI Question Routing
-                      </h4>
-                      <p className="text-[11px] text-slate-400 mt-0.5">Need help explaining the federal court rules of {currentJurisdictionObj.name}?</p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setChatMessage(`How does the constitutional separation of powers work in ${currentJurisdictionObj.name}? Explain key jurisdictions.`);
-                        setActiveTab("counsel");
-                        showToast(`Prompt created contextually for ${currentJurisdictionObj.name}`);
-                      }}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black px-4 py-2 uppercase tracking-wider rounded-md flex items-center gap-1.5 shadow"
-                    >
-                      Query AI Counselor <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Subnational State / Province Selection if Available */}
-                <div className="lg:col-span-5 bg-slate-950 p-6 rounded-xl border border-slate-800 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-2 h-2 bg-amber-400 rounded-full"></div>
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
-                        Constitutional Guide: Provinces & States ({currentJurisdictionObj.id})
-                      </h3>
-                    </div>
-
-                    {currentJurisdictionObj.subnational && currentJurisdictionObj.subnational.length > 0 ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3 bg-slate-900 p-2 border border-slate-800 rounded-lg">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Subnational Region:</label>
-                          <select
-                            id="subnational-selector"
-                            value={selectedSubnational}
-                            onChange={(e) => setSelectedSubnational(e.target.value)}
-                            className="bg-slate-800 text-white text-xs font-bold p-1 px-2 border border-slate-600 rounded flex-1 outline-none"
-                          >
-                            {currentJurisdictionObj.subnational.map((sub) => (
-                              <option key={sub.id} value={sub.id}>
-                                {sub.name} (Capital: {sub.capital})
-                              </option>
-                            ))}
-                          </select>
+              {selectedCountry === "EU" ? (
+                <div className="col-span-12 space-y-6">
+                  {/* Dashboard Header */}
+                  <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-indigo-950 border border-indigo-500/20 p-6 rounded-xl shadow-xl">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] bg-indigo-600 text-white font-extrabold px-2.5 py-1 rounded font-mono uppercase tracking-wider shadow-sm">
+                            Exclusive Sovereign Hub
+                          </span>
+                          <span className="text-[10px] bg-emerald-950/80 border border-emerald-500/50 text-emerald-400 font-extrabold px-2.5 py-1 rounded font-mono flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                            ACTIVE REAL-TIME SANDBOX
+                          </span>
                         </div>
-
-                        {/* Rendering selected subnational */}
-                        {(() => {
-                          const currentSub = currentJurisdictionObj.subnational.find((s) => s.id === selectedSubnational) || currentJurisdictionObj.subnational[0];
-                          if (!currentSub) return null;
-                          return (
-                            <div className="space-y-3 bg-slate-900/60 p-4 border border-slate-800 rounded-lg">
-                              <h4 className="text-base font-bold text-white flex items-center gap-1.5">
-                                <span className="text-amber-300">⚖️</span> {currentSub.name} ({currentSub.id})
-                              </h4>
-                              
-                              <p className="text-xs text-slate-300 leading-relaxed font-medium bg-slate-950 p-2.5 rounded border border-slate-800">
-                                <strong className="text-slate-400">Legal Family / System Notes:</strong> {currentSub.legal_system_notes}
-                              </p>
-
-                              <div className="space-y-2 pt-2">
-                                <div className="flex items-center justify-between text-xs bg-slate-950/80 p-2 rounded">
-                                  <span className="text-slate-400">Official Legislation:</span>
-                                  <a href={currentSub.official_legislation_portal_url} target="_blank" rel="noreferrer" className="text-amber-400 font-bold hover:underline flex items-center gap-1">
-                                    {currentSub.official_legislation_portal_name} <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                </div>
-                                <div className="flex items-center justify-between text-xs bg-slate-950/80 p-2 rounded">
-                                  <span className="text-slate-400">Highest Court:</span>
-                                  <a href={currentSub.highest_court_url} target="_blank" rel="noreferrer" className="text-amber-400 font-bold hover:underline flex items-center gap-1">
-                                    {currentSub.highest_court_name} <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                </div>
-                                {currentSub.justice_ministry_url && (
-                                  <div className="flex items-center justify-between text-xs bg-slate-950/80 p-2 rounded">
-                                    <span className="text-slate-400">Ministry of Justice / Attorney General:</span>
-                                    <a href={currentSub.justice_ministry_url} target="_blank" rel="noreferrer" className="text-amber-400 font-bold hover:underline flex items-center gap-1">
-                                      Official Department <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    ) : (
-                      <div className="p-10 border border-dashed border-slate-800 text-center rounded-lg">
-                        <Info className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-                        <p className="text-xs text-slate-400">
-                          This sovereign jurisdiction is consolidated heavily at the federal tier or operates as a unitary state. No major subnational databases mapped.
+                        <h2 className="text-3xl font-black text-white mt-2.5 tracking-tight flex items-center gap-2.5">
+                          <Sparkles className="w-7 h-7 text-amber-400 animate-pulse" />
+                          DIGITAL MARKETING CRM™
+                        </h2>
+                        <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+                          The Smart Way to Capture, Convert, and Scale. We have transformed the traditional European Union compliance hub into an interactive full-funnel SaaS playground featuring sales pipelines, automated email sequences, social media copy generators, and plug-and-play AI tool templates.
                         </p>
                       </div>
-                    )}
+
+                      {/* Main Tabs */}
+                      <div className="flex flex-wrap items-center gap-1 bg-slate-900/90 p-1.5 rounded-lg border border-slate-800 self-start lg:self-center">
+                        {(["dashboard", "listing", "sequences", "social", "templates", "brand", "faqs"] as const).map((tab) => (
+                          <button
+                            key={tab}
+                            onClick={() => setSelectedCrmTab(tab)}
+                            className={`px-3 py-2 text-[10px] font-black uppercase rounded transition-all tracking-wider ${
+                              selectedCrmTab === tab
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/50 scale-102"
+                                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                            }`}
+                          >
+                            {tab === "faqs" ? "FAQs" : tab}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-slate-800">
-                    <p className="text-[11px] text-slate-500 italic">
-                      Disclaimers: All external repositories linked directly are public official government portals. ALL LEGAL MATTERS AI is grounded on actual regional laws, but does not provide active, unsolicited non-audited local legal advice.
-                    </p>
-                  </div>
+                  {/* TAB 1: DASHBOARD OVERVIEW */}
+                  {selectedCrmTab === "dashboard" && (
+                    <div className="space-y-6">
+                      {/* Interactive Bento Stat Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2 relative overflow-hidden group hover:border-slate-700 transition-all">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl group-hover:bg-indigo-500/10 transition-all"></div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Leads Captured</span>
+                            <div className="p-1.5 bg-indigo-950 text-indigo-400 rounded-lg">
+                              <Users className="w-4 h-4" />
+                            </div>
+                          </div>
+                          <div className="flex items-baseline gap-2 pt-1">
+                            <span className="text-2xl font-black text-white font-mono">{crmLeadsCount.toLocaleString()}</span>
+                            <span className="text-[10px] text-emerald-400 font-bold font-mono">+12.4% MoM</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Dynamic capture from Web Forms, FB Ads, and Calendars.</p>
+                        </div>
+
+                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2 relative overflow-hidden group hover:border-slate-700 transition-all">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl group-hover:bg-amber-500/10 transition-all"></div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Active Opportunities</span>
+                            <div className="p-1.5 bg-amber-950 text-amber-400 rounded-lg">
+                              <Sliders className="w-4 h-4" />
+                            </div>
+                          </div>
+                          <div className="flex items-baseline gap-2 pt-1">
+                            <span className="text-2xl font-black text-white font-mono">{crmOppCount}</span>
+                            <span className="text-[10px] text-amber-400 font-bold font-mono">+8.7% MoM</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Qualified leads actively engaged in conversion pipelines.</p>
+                        </div>
+
+                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2 relative overflow-hidden group hover:border-slate-700 transition-all">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl group-hover:bg-emerald-500/10 transition-all"></div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Pipeline Value</span>
+                            <div className="p-1.5 bg-emerald-950 text-emerald-400 rounded-lg">
+                              <TrendingUp className="w-4 h-4" />
+                            </div>
+                          </div>
+                          <div className="flex items-baseline gap-2 pt-1">
+                            <span className="text-2xl font-black text-white font-mono">${crmPipelineValue.toLocaleString()}</span>
+                            <span className="text-[10px] text-emerald-400 font-bold font-mono">Forecasted</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Value of open opportunities in stages 1 to 4.</p>
+                        </div>
+
+                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2 relative overflow-hidden group hover:border-slate-700 transition-all">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-pink-500/5 rounded-full blur-xl group-hover:bg-pink-500/10 transition-all"></div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Recurring Revenue</span>
+                            <div className="p-1.5 bg-pink-950 text-pink-400 rounded-lg">
+                              <CreditCard className="w-4 h-4" />
+                            </div>
+                          </div>
+                          <div className="flex items-baseline gap-2 pt-1">
+                            <span className="text-2xl font-black text-white font-mono">${crmRevenue.toLocaleString()}</span>
+                            <span className="text-[10px] text-indigo-400 font-bold font-mono">ARR Growth</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Fully realized ARR across annual & monthly tiers.</p>
+                        </div>
+                      </div>
+
+                      {/* Interactive Controls & Sales Pipeline */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* Visual Funnel */}
+                        <div className="lg:col-span-7 bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-5">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                              <Sliders className="w-4 h-4 text-indigo-400" />
+                              Interactive Sales Pipeline Stages
+                            </h3>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setCrmLeadsCount(prev => prev + 1);
+                                  setCrmPipelineValue(prev => prev + 1200);
+                                  const names = ["Thomas M.", "Emma V.", "Klaus S.", "Sophia L.", "Amélie G."];
+                                  const selectedName = names[Math.floor(Math.random() * names.length)];
+                                  const sources = ["Google Search", "Facebook Retargeting", "Instagram Reel", "Referral Network"];
+                                  const source = sources[Math.floor(Math.random() * sources.length)];
+                                  setCrmActivities(prev => [
+                                    {
+                                      id: `act-sim-${Date.now()}`,
+                                      time: "Just now",
+                                      text: `Lead captured via ${source}: ${selectedName} (Est. Deal: $1,200)`,
+                                      type: "lead"
+                                    },
+                                    ...prev.slice(0, 5)
+                                  ]);
+                                  showToast(`Simulated Lead captured: ${selectedName}!`);
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black px-3 py-1.5 uppercase rounded tracking-wider transition-all"
+                              >
+                                + Capture Lead
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (crmOppCount > 0) {
+                                    setCrmOppCount(prev => prev - 1);
+                                    setCrmRevenue(prev => prev + 2400);
+                                    const names = ["Jackson Agency", "Munich Coach LLC", "Parisian App dev", "Bruxelles Retail", "Amster-Trade"];
+                                    const selectedClient = names[Math.floor(Math.random() * names.length)];
+                                    setCrmActivities(prev => [
+                                      {
+                                        id: `act-sim-${Date.now()}`,
+                                        time: "Just now",
+                                        text: `Deal Closed Won: ${selectedClient} upgraded to ARR Tier ($2,400/yr)`,
+                                        type: "revenue"
+                                      },
+                                      ...prev.slice(0, 5)
+                                    ]);
+                                    showToast(`Deal Won: ${selectedClient}! +$2,400 ARR`);
+                                  }
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black px-3 py-1.5 uppercase rounded tracking-wider transition-all"
+                              >
+                                🏆 Close Deal
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3.5 pt-2">
+                            <div>
+                              <div className="flex justify-between text-xs mb-1 font-bold">
+                                <span className="text-slate-300">1. New Lead Intake (38%)</span>
+                                <span className="text-slate-400 font-mono">942 Leads</span>
+                              </div>
+                              <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden">
+                                <div className="bg-indigo-500 h-full rounded-full transition-all" style={{ width: "38%" }}></div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1 font-bold">
+                                <span className="text-slate-300">2. Contacted & Scheduled (24%)</span>
+                                <span className="text-slate-400 font-mono">595 Leads</span>
+                              </div>
+                              <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden">
+                                <div className="bg-blue-500 h-full rounded-full transition-all" style={{ width: "24%" }}></div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1 font-bold">
+                                <span className="text-slate-300">3. Qualified Opportunity (16%)</span>
+                                <span className="text-slate-400 font-mono">396 Leads</span>
+                              </div>
+                              <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden">
+                                <div className="bg-amber-500 h-full rounded-full transition-all" style={{ width: "16%" }}></div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1 font-bold">
+                                <span className="text-slate-300">4. Proposal Submitted (12%)</span>
+                                <span className="text-slate-400 font-mono">297 Leads</span>
+                              </div>
+                              <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden">
+                                <div className="bg-pink-500 h-full rounded-full transition-all" style={{ width: "12%" }}></div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs mb-1 font-bold">
+                                <span className="text-slate-300">5. Closed Won (10%)</span>
+                                <span className="text-emerald-400 font-bold font-mono">248 Customers</span>
+                              </div>
+                              <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-emerald-500/20">
+                                <div className="bg-emerald-500 h-full rounded-full transition-all" style={{ width: "10%" }}></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Custom Charts SVG / Dynamic Visuals */}
+                        <div className="lg:col-span-5 bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                          <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4 text-emerald-400" />
+                            Revenue Overview & Trends (H1)
+                          </h3>
+                          
+                          {/* Beautiful Responsive SVG Graph */}
+                          <div className="h-32 w-full bg-slate-950 rounded-lg p-2 border border-slate-850 flex flex-col justify-between relative">
+                            <div className="absolute top-2 left-3 text-[9px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                              Realized Recurring Growth ($)
+                            </div>
+                            <svg viewBox="0 0 400 100" className="w-full h-24 overflow-visible">
+                              {/* Grid lines */}
+                              <line x1="0" y1="20" x2="400" y2="20" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2,2" />
+                              <line x1="0" y1="50" x2="400" y2="50" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2,2" />
+                              <line x1="0" y1="80" x2="400" y2="80" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="2,2" />
+                              
+                              {/* Filled Area */}
+                              <path
+                                d="M0,90 Q80,75 160,55 T320,30 L400,10 L400,100 L0,100 Z"
+                                fill="url(#indigo-grad)"
+                                opacity="0.15"
+                              />
+                              {/* Trend Line */}
+                              <path
+                                d="M0,90 Q80,75 160,55 T320,30 L400,10"
+                                fill="none"
+                                stroke="#6366f1"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                              />
+                              {/* Interactive Points */}
+                              <circle cx="80" cy="78" r="3.5" fill="#f59e0b" stroke="#0f172a" strokeWidth="1.5" />
+                              <circle cx="160" cy="55" r="3.5" fill="#f59e0b" stroke="#0f172a" strokeWidth="1.5" />
+                              <circle cx="320" cy="30" r="3.5" fill="#10b981" stroke="#0f172a" strokeWidth="1.5" className="animate-pulse" />
+                              <circle cx="400" cy="10" r="4.5" fill="#10b981" stroke="#0f172a" strokeWidth="2" className="animate-ping" style={{ transformOrigin: '400px 10px' }} />
+
+                              <defs>
+                                <linearGradient id="indigo-grad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#6366f1" />
+                                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                                </linearGradient>
+                              </defs>
+                            </svg>
+                            <div className="flex justify-between text-[9px] font-mono text-slate-500 px-1 font-bold">
+                              <span>JAN ($85K)</span>
+                              <span>MAR ($120K)</span>
+                              <span>MAY ($155K)</span>
+                              <span>JUN (${(crmRevenue/1000).toFixed(0)}K)</span>
+                            </div>
+                          </div>
+
+                          {/* Multi Channel Lead Attribution Pie/Ring Representation */}
+                          <div className="space-y-2">
+                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                              <PieChartIcon className="w-3 h-3 text-pink-400" /> Lead Attribution Sources
+                            </span>
+                            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-300">
+                              <div className="bg-slate-950 p-2 rounded border border-slate-850 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-indigo-500 rounded-full"></span>Website Forms</span>
+                                <span className="font-bold text-white">42%</span>
+                              </div>
+                              <div className="bg-slate-950 p-2 rounded border border-slate-850 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-blue-500 rounded-full"></span>Facebook Ads</span>
+                                <span className="font-bold text-white">28%</span>
+                              </div>
+                              <div className="bg-slate-950 p-2 rounded border border-slate-850 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-pink-500 rounded-full"></span>Instagram</span>
+                                <span className="font-bold text-white">15%</span>
+                              </div>
+                              <div className="bg-slate-950 p-2 rounded border border-slate-850 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-emerald-500 rounded-full"></span>Google Ads</span>
+                                <span className="font-bold text-white">10%</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Recent Activities Feed */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                            Live CRM Campaign & Lead Events
+                          </h3>
+                          <button
+                            onClick={() => {
+                              setCrmActivities([
+                                { id: "act-1", time: "Just now", text: "New Lead captured from Google Ads: Michael K.", type: "lead" },
+                                { id: "act-2", time: "5 mins ago", text: "AI workflow triggered: Send Welcome Sequence to Michael K.", type: "system" },
+                                { id: "act-3", time: "25 mins ago", text: "Lead upgraded: Sarah L. moved to Qualified stage", type: "pipeline" },
+                                { id: "act-4", time: "1 hour ago", text: "Opportunity closed: 5-user Growth Plan subscription finalized ($2,400/yr)", type: "revenue" },
+                                { id: "act-5", time: "3 hours ago", text: "Facebook Ad campaign optimization: Click-Through-Rate improved to 3.24%", type: "campaign" }
+                              ]);
+                              showToast("Simulation log reset successfully!");
+                            }}
+                            className="text-xs text-indigo-400 hover:text-indigo-300 font-bold"
+                          >
+                            Reset Feed Logs
+                          </button>
+                        </div>
+
+                        <div className="divide-y divide-slate-800 max-h-[220px] overflow-y-auto pr-2 space-y-2.5">
+                          {crmActivities.map((act) => (
+                            <div key={act.id} className="pt-2.5 flex items-start gap-3 text-xs justify-between group">
+                              <div className="flex items-start gap-2.5">
+                                <span className={`w-2 h-2 mt-1.5 rounded-full flex-shrink-0 ${
+                                  act.type === "lead" ? "bg-indigo-500" :
+                                  act.type === "revenue" ? "bg-emerald-500 animate-pulse" :
+                                  act.type === "pipeline" ? "bg-amber-500" :
+                                  act.type === "campaign" ? "bg-pink-500" : "bg-slate-400"
+                                }`}></span>
+                                <span className="text-slate-300 group-hover:text-white transition-colors">{act.text}</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-500 flex-shrink-0 font-bold">{act.time}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Perfect For Section */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-slate-900/60 p-4 rounded-lg border border-slate-800/80">
+                          <h4 className="text-xs font-black uppercase text-amber-400">Entrepreneurs & Creators</h4>
+                          <p className="text-[11px] text-slate-400 mt-1">Scale coaching, digital courses, agency consulting, and high-ticket service sales effortlessly with structured automations.</p>
+                        </div>
+                        <div className="bg-slate-900/60 p-4 rounded-lg border border-slate-800/80">
+                          <h4 className="text-xs font-black uppercase text-indigo-400">Marketing Agencies</h4>
+                          <p className="text-[11px] text-slate-400 mt-1">Manage pipeline opportunities for dozens of active accounts in real-time. Instantly demonstrate ROI metrics in reporting tabs.</p>
+                        </div>
+                        <div className="bg-slate-900/60 p-4 rounded-lg border border-slate-800/80">
+                          <h4 className="text-xs font-black uppercase text-pink-400">E-Commerce Pioneers</h4>
+                          <p className="text-[11px] text-slate-400 mt-1">Synchronize cart behaviors and trigger high-conversion emails within seconds using deep API integrations and tracking links.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: APP STORE LISTING */}
+                  {selectedCrmTab === "listing" && (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      <div className="lg:col-span-8 bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-6">
+                        <div>
+                          <span className="text-[10px] bg-slate-800 text-amber-400 font-extrabold px-2 py-0.5 rounded font-mono">
+                            OFFICIAL METADATA SPEC
+                          </span>
+                          <h3 className="text-xl font-black text-white mt-2">App Store Metadata Specification</h3>
+                          <p className="text-xs text-slate-400 mt-0.5">Use this pre-configured data package for uploading your finalized build to iTunes Connect and Google Play console.</p>
+                        </div>
+
+                        <div className="space-y-4 pt-2">
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-2">
+                            <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">
+                              <span>App Name (Max 30 characters)</span>
+                              <span className="text-indigo-400">22 / 30 chars</span>
+                            </div>
+                            <p className="text-sm font-black text-white selection:bg-indigo-600">DIGITAL MARKETING CRM™</p>
+                          </div>
+
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-2">
+                            <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">
+                              <span>Subtitle (Max 30 characters)</span>
+                              <span className="text-indigo-400">29 / 30 chars</span>
+                            </div>
+                            <p className="text-xs font-bold text-slate-200">The Smart Way to Scale Sales</p>
+                          </div>
+
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-2">
+                            <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">
+                              <span>Short Description (Max 80 characters)</span>
+                              <span className="text-indigo-400">79 / 80 chars</span>
+                            </div>
+                            <p className="text-xs font-semibold text-slate-200">
+                              Capture leads, trigger automated campaigns, and scale revenue with our smart CRM.
+                            </p>
+                          </div>
+
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-2">
+                            <div className="text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider mb-1">
+                              Full Description (App Store Optimized)
+                            </div>
+                            <div className="text-xs text-slate-300 space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                              <p className="font-extrabold text-white">🚀 Grow your business with AI-powered marketing automation and an intelligent CRM built for modern entrepreneurs, agencies, coaches, and service providers.</p>
+                              <p>DIGITAL MARKETING CRM™ brings your marketing and sales funnels into a single, unified environment. Stop losing leads in messy spreadsheets and start converting traffic into lifelong customers using our automated workflows.</p>
+                              <p className="font-bold text-amber-400">Key Feature Highlights:</p>
+                              <ul className="list-disc pl-4 space-y-1 text-slate-400">
+                                <li><strong>Full-Funnel Automation:</strong> Instantly sequence onboarding, welcome emails, and payment updates.</li>
+                                <li><strong>Intelligent Lead Scoring:</strong> Separate passive traffic from active, high-intent opportunities automatically.</li>
+                                <li><strong>Bento Dashboard Analytics:</strong> Track real-time leads, closed deals, attribution channels, and ARR forecasts.</li>
+                                <li><strong>Copy-to-Clipboard Content Center:</strong> Use our ready-to-run marketing emails, social scripts, and landing copies.</li>
+                              </ul>
+                              <p>Join thousands of entrepreneurs worldwide and optimize your conversion channels today!</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Mock Device Preview */}
+                      <div className="lg:col-span-4 bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col justify-between">
+                        <div className="space-y-4">
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> App Store Mockup Preview
+                          </span>
+
+                          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 relative shadow-inner overflow-hidden">
+                            {/* Notch */}
+                            <div className="w-24 h-4 bg-slate-900 mx-auto rounded-full mb-3"></div>
+                            
+                            <div className="flex items-center gap-3">
+                              <div className="w-14 h-14 bg-gradient-to-tr from-indigo-600 to-pink-600 rounded-xl flex items-center justify-center font-black text-white text-base shadow-lg shadow-indigo-900/45">
+                                CRM
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-white">DIGITAL MARKETING CRM™</h4>
+                                <p className="text-[9px] text-slate-400">The Smart Way to Scale Sales</p>
+                                <div className="flex items-center gap-1 mt-1 text-amber-400 text-[9px] font-bold">
+                                  <span>4.9 ★★★★★</span>
+                                  <span className="text-slate-500 font-mono">(4.8K ratings)</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black py-1.5 rounded-lg uppercase tracking-wider mt-4 transition-all">
+                              Download from App Store
+                            </button>
+
+                            <div className="mt-4 pt-3 border-t border-slate-850 space-y-2">
+                              <div className="flex items-center justify-between text-[8px] font-mono text-slate-500">
+                                <span>DEVELOPER</span>
+                                <span className="text-slate-300">CRM Global Inc.</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[8px] font-mono text-slate-500">
+                                <span>SIZE</span>
+                                <span className="text-slate-300">42.8 MB</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[8px] font-mono text-slate-500">
+                                <span>COMPATIBILITY</span>
+                                <span className="text-slate-300">iOS 16+ / Android 11+</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-800/60 text-[10px] text-slate-400 space-y-1.5">
+                          <p className="font-extrabold text-slate-300 uppercase">System Requirements:</p>
+                          <ul className="list-disc pl-4 text-slate-500 space-y-0.5 font-mono">
+                            <li>Local SQLite support for offline data sync</li>
+                            <li>TLS 1.3 Secure WebSocket API</li>
+                            <li>Memory allocation: Min 512MB RAM</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 3: EMAIL CAMPAIGNS SEQUENCE */}
+                  {selectedCrmTab === "sequences" && (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      {/* Left Inbox List */}
+                      <div className="lg:col-span-4 bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                          <Mail className="w-4 h-4 text-indigo-400" />
+                          4-Step Email Marketing Sequence
+                        </span>
+
+                        <div className="space-y-2 pt-2">
+                          {[
+                            { step: 1, title: "1. Welcome & Onboarding", icon: "👋", sub: "Triggered instantly on lead capture" },
+                            { step: 2, title: "2. Value & Automation", icon: "⚡", sub: "Triggered 24 hours later" },
+                            { step: 3, title: "3. Social Proof & Case Study", icon: "📈", sub: "Triggered 48 hours later" },
+                            { step: 4, title: "4. Urgency & Trial Expiration", icon: "⌛", sub: "Triggered 72 hours later" }
+                          ].map((e) => (
+                            <button
+                              key={e.step}
+                              onClick={() => setSelectedCrmEmail(e.step)}
+                              className={`w-full text-left p-3 rounded-lg border transition-all flex items-start gap-2.5 ${
+                                selectedCrmEmail === e.step
+                                  ? "bg-indigo-950 border-indigo-500 shadow-md"
+                                  : "bg-slate-950 border-slate-850 hover:bg-slate-900 hover:border-slate-800"
+                              }`}
+                            >
+                              <span className="text-lg">{e.icon}</span>
+                              <div className="space-y-0.5">
+                                <h4 className="text-xs font-black text-white">{e.title}</h4>
+                                <p className="text-[10px] text-slate-400 font-medium leading-tight">{e.sub}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Right Email Body Viewer */}
+                      {(() => {
+                        const emailData = [
+                          {
+                            step: 1,
+                            subject: "Welcome to DIGITAL MARKETING CRM™ – Let's Scale Your Business!",
+                            body: `Hi {{first_name}},\n\nWelcome to DIGITAL MARKETING CRM™ – the smart way to capture, convert, and scale your sales funnel.\n\nOver the next few days, we will show you how to leverage automated leads workflows to turn traffic into paying customers. Today, your first task is simple: log in to your dashboard, configure your default inbound capture form, and invite your sales rep.\n\n👉 Click here to access your CRM Dashboard: {{login_url}}\n\nTo your marketing success,\n\nThe CRM Global Team`
+                          },
+                          {
+                            step: 2,
+                            subject: "Unleash AI-Powered Marketing Automation (Save 10+ Hours/Week)",
+                            body: `Hi {{first_name}},\n\nDid you know that 74% of prospective leads are lost due to delayed follow-ups?\n\nWith DIGITAL MARKETING CRM™, you don't have to worry about manual messaging. Our AI triggers immediate personalized response templates the second a lead hits your website. Agencies and service providers are currently saving over 10 hours per week simply by leaving routing and scoring on auto-pilot.\n\n👉 Watch this 2-minute automation setup tutorial: {{video_tutorial_url}}\n\nKeep scaling,\n\nThe CRM Global Team`
+                          },
+                          {
+                            step: 3,
+                            subject: "How Sarah Scaled Her Agency 3x Using DIGITAL MARKETING CRM™",
+                            body: `Hi {{first_name}},\n\nMeet Sarah. She was running a fast-growing marketing agency but found herself spending 4 hours every day copying contact details into spreadsheets.\n\nAfter migrating to DIGITAL MARKETING CRM™, she unified her landing forms, automated client onboarding sequences, and scaled her team size from 2 to 6. Within 90 days, her sales pipeline conversion rate increased by 210%.\n\n"The Bento dashboard changed how I view my business metrics. I finally have absolute clarity over my pipeline ARR forecasts." - Sarah M.\n\nAre you ready to write your own growth story?\n\n👉 Upgrade to the Full Enterprise Tier today: {{billing_portal_url}}\n\nBest regards,\n\nThe CRM Global Team`
+                          },
+                          {
+                            step: 4,
+                            subject: "Final Notice: Your Trial Expires in 24 Hours. Lock in 50% Off Today!",
+                            body: `Hi {{first_name}},\n\nThis is a friendly reminder that your free access tier for DIGITAL MARKETING CRM™ expires in exactly 24 hours.\n\nIf you don't upgrade, your active webhook lead captures will pause, and your automated email sequences will stop sending. We don't want you to lose momentum! For a limited time, you can lock in our Founders Rate and save 50% on your first year.\n\n👉 Lock in your 50% Founders discount now: {{discount_payment_url}}\n\nDon't let valuable leads slip away!\n\nWarmly,\n\nThe CRM Global Team`
+                          }
+                        ].find((m) => m.step === selectedCrmEmail) || { subject: "", body: "" };
+
+                        return (
+                          <div className="lg:col-span-8 bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col justify-between space-y-4">
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+                                <span className="text-[10px] bg-indigo-600/20 text-indigo-400 font-extrabold px-2.5 py-1 rounded font-mono">
+                                  STEP {selectedCrmEmail} TEMPLATE
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`Subject: ${emailData.subject}\n\n${emailData.body}`);
+                                    showToast(`Copied Step ${selectedCrmEmail} Email to Clipboard!`);
+                                  }}
+                                  className="text-[10px] bg-slate-850 hover:bg-slate-800 text-amber-400 font-extrabold px-3 py-1.5 rounded flex items-center gap-1.5 border border-slate-700 transition-all"
+                                >
+                                  <Copy className="w-3.5 h-3.5" /> Copy Template Text
+                                </button>
+                              </div>
+
+                              <div className="space-y-2 pt-2 text-xs">
+                                <div className="flex items-baseline gap-2 bg-slate-950 p-3 rounded-lg border border-slate-850">
+                                  <span className="text-slate-500 font-bold uppercase tracking-wider text-[9px] w-14">Subject:</span>
+                                  <span className="text-white font-black">{emailData.subject}</span>
+                                </div>
+                                <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-1.5 font-mono text-[11px] text-slate-300 whitespace-pre-wrap min-h-[220px]">
+                                  {emailData.body}
+                                </div>
+                              </div>
+                            </div>
+
+                            <p className="text-[10px] text-slate-500 italic font-medium">
+                              Note: Replace placeholder tokens like <strong className="text-slate-400 font-mono">{"{{first_name}}"}</strong> or <strong className="text-slate-400 font-mono">{"{{login_url}}"}</strong> directly in your sender tool (e.g. Mailchimp, Klaviyo, HubSpot).
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* TAB 4: SOCIAL MEDIA & VIDEO CONTENT */}
+                  {selectedCrmTab === "social" && (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      {/* Left Platform Toggles */}
+                      <div className="lg:col-span-4 bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                          <Share2 className="w-4 h-4 text-indigo-400" />
+                          Multi-Channel Social Kit
+                        </span>
+
+                        <div className="space-y-1.5 pt-2">
+                          {[
+                            { key: "linkedin", title: "LinkedIn Authority Post", desc: "Build professional B2B authority" },
+                            { key: "twitter", title: "Twitter/X Thread", desc: "High-hook engaging threads" },
+                            { key: "facebook", title: "Facebook Ad High-Converting", desc: "For lead generation campaigns" },
+                            { key: "video", title: "60-Second Video Script", desc: "Explainer video teleprompter" }
+                          ].map((s) => (
+                            <button
+                              key={s.key}
+                              onClick={() => setSelectedCrmSocial(s.key)}
+                              className={`w-full text-left p-2.5 rounded-lg border transition-all ${
+                                selectedCrmSocial === s.key
+                                  ? "bg-indigo-950 border-indigo-500"
+                                  : "bg-slate-950 border-slate-850 hover:bg-slate-900"
+                              }`}
+                            >
+                              <h4 className="text-xs font-black text-white">{s.title}</h4>
+                              <p className="text-[10px] text-slate-400">{s.desc}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Right Platform Viewer */}
+                      {(() => {
+                        const contentData = {
+                          linkedin: {
+                            platform: "LinkedIn B2B Lead Acquisition Spec",
+                            text: `Spreadsheets are the silent killer of entrepreneurial scale.\n\nI see coaches, founders, and agency owners spending 2 hours every day copying contact details, chasing unpaid invoices, and manually emailing new lead captures.\n\nIf you want to scale your business, stop wasting time on administrative operations. Let automation manage your welcome flows and funnel pipelines while you focus on closing won deals.\n\nThis is why we built DIGITAL MARKETING CRM™.\n\nNo clutter. No low-value setups. Just clean workflows that turn traffic into recurring revenue.\n\n👉 Join our early Founders cohort and scale your pipeline today: https://digitalmarketingcrm.example.com\n\n#SaaS #CRM #MarketingAutomation #LeadGen #ScalingBusiness`
+                          },
+                          twitter: {
+                            platform: "Twitter/X Authority Thread (5-Tweets)",
+                            text: `Tweet 1/5:\nMost entrepreneurs fail to scale because they are trapped in spreadsheet jail.\n\nChasing contacts, sending welcome emails, logging follow-ups manually... it's a massive drag on productivity. Here's how to fix it: 👇\n\nTweet 2/5:\nYour welcome sequences MUST trigger in seconds, not hours. 74% of inbound leads choose the vendor that replies first. AI-driven response triggers bypass human delay completely.\n\nTweet 3/5:\nStop guessing pipeline health. Dynamic tracking lets you score intent, monitor qualified deals, and forecast monthly recurring revenue (ARR) with high accuracy.\n\nTweet 4/5:\nConsolidate your stack. Having separate tools for form building, email sequencing, and pipeline logging is a recipe for broken integrations and leaked leads.\n\nTweet 5/5:\nOptimize your conversion pipeline with DIGITAL MARKETING CRM™. Founders get 50% off for a limited time. Lock in your growth rate today: https://digitalmarketingcrm.example.com`
+                          },
+                          facebook: {
+                            platform: "Facebook High-ROAS Direct Response Ad Copy",
+                            text: `[🔥 ATTENTION: Agencies, Coaches & High-Ticket Founders]\n\nAre you still manually managing your inbound leads? Or worse... losing potential sales in messy, outdated spreadsheets?\n\nStop letting valuable leads slip through the cracks!\n\nMeet DIGITAL MARKETING CRM™ – the ultimate all-in-one automation hub that captures, scores, and converts your traffic on complete auto-pilot.\n\n✅ Auto-trigger responsive welcome sequences instantly\n✅ Score high-intent opportunities dynamically\n✅ Track recurring revenue & ARR forecasts on a clean, beautiful Bento dashboard\n✅ Plug-and-play high-converting templates within seconds\n\nStop trading 10+ hours a week for repetitive administration. Optimize your conversion rates and scale your business today.\n\n👉 Click "Learn More" to unlock 50% off during our Founders discount event!\n\nhttps://digitalmarketingcrm.example.com`
+                          },
+                          video: {
+                            platform: "60-Second Video Script & Teleprompter Cue Cards",
+                            text: `[0:00 - 0:10 Intro Hook]\n(Visual: Frustrated entrepreneur looking at a massive, messy spreadsheet with flashing warnings)\nNarrator: "Are you still managing your sales pipeline in spreadsheets? Or losing valuable leads because you didn't follow up fast enough?"\n\n[0:10 - 0:30 The Solution]\n(Visual: Smooth transition into a clean, sleek dark-themed bento CRM dashboard with rising graphs)\nNarrator: "Stop leaking revenue. Meet DIGITAL MARKETING CRM™ – the smart, automated sales funnel designed for modern creators, agencies, and service providers."\n\n[0:30 - 0:50 Key Features]\n(Visual: Animated clips of inbound contact forms, AI welcome emails triggering, and a deal sliding to 'Closed Won')\nNarrator: "Capture leads automatically. Trigger welcome sequences instantly. And score high-intent opportunities without lifting a finger."\n\n[0:50 - 1:00 Call to Action]\n(Visual: Download logo appearing with 50% discount banner)\nNarrator: "Stop wasting hours on administrative operations. Get 50% off our Founders tier today, and scale your business. Visit digitalmarketingcrm.example.com."`
+                          }
+                        }[selectedCrmSocial] || { platform: "", text: "" };
+
+                        return (
+                          <div className="lg:col-span-8 bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col justify-between space-y-4">
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+                                <span className="text-[10px] bg-slate-800 text-pink-400 font-mono font-black uppercase px-2.5 py-1 rounded">
+                                  {contentData.platform}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(contentData.text);
+                                    showToast("Social Copy Copied to Clipboard!");
+                                  }}
+                                  className="text-[10px] bg-slate-850 hover:bg-slate-800 text-amber-400 font-extrabold px-3 py-1.5 rounded flex items-center gap-1.5 border border-slate-700 transition-all"
+                                >
+                                  <Copy className="w-3.5 h-3.5" /> Copy Social Copy
+                                </button>
+                              </div>
+
+                              <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 font-mono text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed min-h-[220px]">
+                                {contentData.text}
+                              </div>
+                            </div>
+
+                            <p className="text-[10px] text-slate-500 font-medium">
+                              Pro Tip: High-converting social copy focuses heavily on identifying a common bottleneck (manual admin, loss of leads) and introducing immediate visual solutions.
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* TAB 5: AI ECOSYSTEM & READY TEMPLATES */}
+                  {selectedCrmTab === "templates" && (
+                    <div className="space-y-6">
+                      {/* Top Verified AI eCommerce Tools Dashboard */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                        <div>
+                          <span className="text-[10px] bg-indigo-900/40 text-indigo-300 font-black px-2.5 py-1 rounded font-mono uppercase tracking-wider">
+                            Verified AI Ecosystem Links
+                          </span>
+                          <h3 className="text-base font-black text-white mt-2">Top AI-Powered E-Commerce & Marketing Tools</h3>
+                          <p className="text-xs text-slate-400 mt-0.5">Integrate these leading platforms directly with your DIGITAL MARKETING CRM™ webhook webhooks to automate multi-channel campaigns.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                          {[
+                            { name: "Jasper AI", role: "AI Copywriting & Blogging", url: "https://www.jasper.ai", rating: "4.8/5", desc: "Generates high-intent sales scripts and SEO content." },
+                            { name: "Copy.ai", role: "Short Social & Ad Copy", url: "https://www.copy.ai", rating: "4.7/5", desc: "Automates Facebook and LinkedIn posts within seconds." },
+                            { name: "Shopify Magic", role: "Product Description AI", url: "https://www.shopify.com", rating: "4.6/5", desc: "Writes automated details for store items." },
+                            { name: "Klaviyo AI", role: "Email Flow Personalization", url: "https://www.klaviyo.com", rating: "4.8/5", desc: "Predictive sending analytics and user segmenting." },
+                            { name: "Rep AI", role: "Sales Concierge Chatbot", url: "https://www.hellorep.ai", rating: "4.6/5", desc: "Drives conversational cart recovery automatically." },
+                            { name: "Surfer SEO", role: "Content Optimization Audit", url: "https://surferseo.com", rating: "4.7/5", desc: "Performs real-time search engine scoring." },
+                            { name: "Synthesia AI", role: "Realistic Video Generation", url: "https://www.synthesia.io", rating: "4.8/5", desc: "Creates realistic avatar videos from written scripts." },
+                            { name: "Tidio Chat", role: "Lead Gen Customer Support", url: "https://www.tidio.com", rating: "4.5/5", desc: "Integrates chatbots straight into CRM pipelines." }
+                          ].map((t, idx) => (
+                            <a
+                              key={idx}
+                              href={t.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="bg-slate-950 p-4 rounded-lg border border-slate-850 hover:border-indigo-500/40 hover:bg-slate-900 transition-all block space-y-1.5 group"
+                            >
+                              <div className="flex justify-between items-start">
+                                <h4 className="text-xs font-black text-white group-hover:text-indigo-400 transition-colors flex items-center gap-1">
+                                  {t.name} <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-indigo-400" />
+                                </h4>
+                                <span className="text-[9px] font-mono font-black text-amber-500 bg-amber-950/40 px-1.5 py-0.5 rounded">
+                                  {t.rating}
+                                </span>
+                              </div>
+                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{t.role}</p>
+                              <p className="text-[10px] text-slate-500 leading-tight">{t.desc}</p>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Ready-Made AI Generated Content Sandbox */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                        <div>
+                          <span className="text-[10px] bg-pink-900/40 text-pink-300 font-black px-2.5 py-1 rounded font-mono uppercase tracking-wider">
+                            Content Sandbox Templates
+                          </span>
+                          <h3 className="text-base font-black text-white mt-2">Plug-and-Play AI Content Generator Sandbox</h3>
+                          <p className="text-xs text-slate-400 mt-0.5">Below are verified AI content templates for product launches, paid ad copy, onboarding sequences, and SEO outlines.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                          {/* Template 1: Wireless Noise Cancelling Headphones Description */}
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-3 flex flex-col justify-between">
+                            <div className="space-y-1.5">
+                              <span className="text-[9px] text-emerald-400 font-mono font-black uppercase">E-Commerce description template</span>
+                              <h4 className="text-xs font-black text-white">Elite Wireless Noise-Cancelling Headphones</h4>
+                              <p className="text-[10px] text-slate-400 leading-normal">
+                                Escape into pure acoustic isolation. Featuring advanced active hybrid noise-cancellation (ANC), 40-hour ultra battery lifespan, and dynamic high-fidelity audio drivers, the Elite Wireless headphone is calibrated for modern audiophiles, travelers, and remote workers.
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText("Elite Wireless Noise-Cancelling Headphones Description\n\nEscape into pure acoustic isolation. Featuring advanced active hybrid noise-cancellation (ANC), 40-hour ultra battery lifespan, and dynamic high-fidelity audio drivers, the Elite Wireless headphone is calibrated for modern audiophiles, travelers, and remote workers.");
+                                showToast("Headphone template copied!");
+                              }}
+                              className="w-full bg-slate-900 hover:bg-slate-850 text-white text-[10px] font-bold py-1.5 rounded border border-slate-800 transition-all uppercase tracking-wider"
+                            >
+                              Copy Product Copy
+                            </button>
+                          </div>
+
+                          {/* Template 2: Facebook Ad Copy */}
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-3 flex flex-col justify-between">
+                            <div className="space-y-1.5">
+                              <span className="text-[9px] text-indigo-400 font-mono font-black uppercase">High-ROAS paid campaign template</span>
+                              <h4 className="text-xs font-black text-white">Facebook Ad Copy: Elite Headphones</h4>
+                              <p className="text-[10px] text-slate-300 leading-normal font-mono bg-slate-900/60 p-2 rounded">
+                                "Are noisy environments killing your focus?\n\nCalibrate your workspace with elite noise cancellation, pristine custom acoustics, and a 40-hour battery. Escape the clutter today.\n\n👉 Shop now with 30-day risk-free returns!"
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText("Facebook Ad Copy: Elite Headphones\n\nAre noisy environments killing your focus?\n\nCalibrate your workspace with elite noise cancellation, pristine custom acoustics, and a 40-hour battery. Escape the clutter today.\n\n👉 Shop now with 30-day risk-free returns!");
+                                showToast("Ad copy template copied!");
+                              }}
+                              className="w-full bg-slate-900 hover:bg-slate-850 text-white text-[10px] font-bold py-1.5 rounded border border-slate-800 transition-all uppercase tracking-wider"
+                            >
+                              Copy Ad Template
+                            </button>
+                          </div>
+
+                          {/* Template 3: 3-step Email Sequence */}
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-3 flex flex-col justify-between">
+                            <div className="space-y-1.5">
+                              <span className="text-[9px] text-amber-400 font-mono font-black uppercase">Product Onboarding Flows</span>
+                              <h4 className="text-xs font-black text-white">3-Step E-Commerce Email Campaign</h4>
+                              <p className="text-[10px] text-slate-400 leading-normal">
+                                Automated flows: Welcome & 10% Coupon code email → Value Highlight (hybrid active ANC & battery tips) → Social Proof & Last chance reminder email. Calibrated to recover over 24% of cart abandonments automatically.
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText("3-Step E-Commerce Email Campaign Flow\n\n1. Welcome & 10% coupon code\n2. Hybrid Active ANC & battery life tips\n3. Social Proof & Cart Abandonment recovery code");
+                                showToast("3-step sequence outline copied!");
+                              }}
+                              className="w-full bg-slate-900 hover:bg-slate-850 text-white text-[10px] font-bold py-1.5 rounded border border-slate-800 transition-all uppercase tracking-wider"
+                            >
+                              Copy Email Outline
+                            </button>
+                          </div>
+
+                          {/* Template 4: SEO Blog Post Outline */}
+                          <div className="bg-slate-950 p-4 rounded-lg border border-slate-850 space-y-3 flex flex-col justify-between">
+                            <div className="space-y-1.5">
+                              <span className="text-[9px] text-pink-400 font-mono font-black uppercase">Organic Search Content Strategy</span>
+                              <h4 className="text-xs font-black text-white">SEO Outline: Best Active Noise-Cancelling Tech</h4>
+                              <p className="text-[10px] text-slate-400 leading-normal">
+                                Calibrated keywords: active noise cancellation, hybrid ANC, focus remote work, hybrid audiophile specs. Structured H2/H3 headers designed to rank on Google Page 1 within 30 days of publishing.
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText("SEO Outline: Best Active Noise-Cancelling Tech\n\nKeywords: active noise cancellation, hybrid ANC, focus remote work, audiophile specs\n\nStructure:\nH1: The Remote Worker's Guide to Active Noise Cancellation\nH2: What is Hybrid Active ANC?\nH2: Top 5 Headphones for Professional Focus\nH3: Calibrating battery life and acoustic isolation");
+                                showToast("SEO outline template copied!");
+                              }}
+                              className="w-full bg-slate-900 hover:bg-slate-850 text-white text-[10px] font-bold py-1.5 rounded border border-slate-800 transition-all uppercase tracking-wider"
+                            >
+                              Copy SEO Outline
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 6: POSITIONING & BRAND VOICE */}
+                  {selectedCrmTab === "brand" && (
+                    <div className="space-y-6">
+                      {/* Competitive Positioning Table */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                        <div>
+                          <span className="text-[10px] bg-slate-800 text-amber-400 font-mono font-extrabold px-2 py-0.5 rounded">
+                            COMPETITIVE INTELLIGENCE
+                          </span>
+                          <h3 className="text-base font-black text-white mt-2">SaaS Competitive Positioning Table</h3>
+                          <p className="text-xs text-slate-400 mt-0.5">Analyze how DIGITAL MARKETING CRM™ compares directly against legacy market competitors.</p>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs border-collapse font-sans">
+                            <thead>
+                              <tr className="border-b border-slate-800 text-slate-400 uppercase font-mono text-[10px]">
+                                <th className="py-2.5 px-3 bg-slate-950">Feature Capability</th>
+                                <th className="py-2.5 px-3 bg-indigo-950 text-white font-extrabold border border-indigo-500/20">DIGITAL MARKETING CRM™</th>
+                                <th className="py-2.5 px-3 bg-slate-950">HubSpot Starter</th>
+                                <th className="py-2.5 px-3 bg-slate-950">Salesforce Essentials</th>
+                                <th className="py-2.5 px-3 bg-slate-950">Zoho CRM</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800 text-slate-300">
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-white bg-slate-950/20">Pricing Strategy</td>
+                                <td className="py-3 px-3 bg-indigo-950/40 text-indigo-300 font-black border border-indigo-500/20">$49/month flat (Unlimited Leads)</td>
+                                <td className="py-3 px-3 font-mono">$18/user/month (Scales up aggressively)</td>
+                                <td className="py-3 px-3 font-mono">$25/user/month (No custom webhooks)</td>
+                                <td className="py-3 px-3 font-mono">$14/user/month (Limited templates)</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-white bg-slate-950/20">AI Automated Sequences</td>
+                                <td className="py-3 px-3 bg-indigo-950/40 text-emerald-400 font-extrabold border border-indigo-500/20">Fully Included (Zero Upcharges)</td>
+                                <td className="py-3 px-3">Requires Professional ($450/mo+)</td>
+                                <td className="py-3 px-3">Requires Enterprise ($150/mo+)</td>
+                                <td className="py-3 px-3">Requires Premium Tiers ($40/mo+)</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-white bg-slate-950/20">Social Copy Kit</td>
+                                <td className="py-3 px-3 bg-indigo-950/40 text-emerald-400 font-extrabold border border-indigo-500/20">Fully Integrated & Copyable</td>
+                                <td className="py-3 px-3">Requires custom manual extensions</td>
+                                <td className="py-3 px-3">No native generator</td>
+                                <td className="py-3 px-3">Requires costly add-on integrations</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-white bg-slate-950/20">Dashboard Analytics</td>
+                                <td className="py-3 px-3 bg-indigo-950/40 text-emerald-400 font-extrabold border border-indigo-500/20">Bento UI with interactive sandbox</td>
+                                <td className="py-3 px-3">Standard generic charts</td>
+                                <td className="py-3 px-3">Highly complex Salesforce layouts</td>
+                                <td className="py-3 px-3">Basic, non-interactive charts</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Brand Voice Guidelines */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                        <div>
+                          <span className="text-[10px] bg-slate-800 text-pink-400 font-mono font-black px-2 py-0.5 rounded">
+                            BRAND VOICE & IDENTITY
+                          </span>
+                          <h3 className="text-base font-black text-white mt-2">Brand Voice, Tone & Messaging Guidelines</h3>
+                          <p className="text-xs text-slate-400 mt-0.5">Calibrate all outgoing campaigns, copywriting, and sales templates according to these standardized pillars.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-slate-950 p-4 border border-slate-850 rounded-lg space-y-3">
+                            <h4 className="text-xs font-black text-indigo-400 uppercase tracking-wider">Voice Attributes</h4>
+                            <div className="space-y-2 text-[11px] text-slate-300">
+                              <p><strong>1. Clear & Purposeful:</strong> Absolute rejection of complicated fluff or empty technical buzzwords. Speak directly to the core bottleneck and provide simple solutions.</p>
+                              <p><strong>2. Empowering:</strong> Inspire action and ownership. Remind the user that they can reclaim 10+ hours a week and double their conversion numbers.</p>
+                              <p><strong>3. Transparent:</strong> Ground all statements in clean data, transparent pricing, and verifiable testimonials.</p>
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-950 p-4 border border-slate-850 rounded-lg space-y-3">
+                            <h4 className="text-xs font-black text-pink-400 uppercase tracking-wider">Channel Tones</h4>
+                            <div className="space-y-2 text-[11px] text-slate-300">
+                              <p><strong>Emails:</strong> High personal warmth, action-oriented call to actions, and helpful educational highlights.</p>
+                              <p><strong>LinkedIn:</strong> Strong authority figures, B2B scalability analysis, and process optimizations.</p>
+                              <p><strong>Facebook Ads:</strong> Immediate value hook, high urgency triggers, and zero-friction signup links.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 7: FAQ ACCORDION */}
+                  {selectedCrmTab === "faqs" && (
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+                      <div>
+                        <span className="text-[10px] bg-slate-800 text-indigo-400 font-mono font-black px-2 py-0.5 rounded">
+                          SUPPORT CENTER
+                        </span>
+                        <h3 className="text-lg font-black text-white mt-2">Frequently Asked Questions</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Find immediate answers regarding data, setup webhooks, and billing structures.</p>
+                      </div>
+
+                      <div className="space-y-2 pt-2">
+                        {[
+                          { q: "What makes DIGITAL MARKETING CRM™ different from Salesforce or HubSpot?", a: "Unlike massive legacy CRM engines that lock essential features (like custom emails sequences or AI integrations) behind expensive Professional and Enterprise upgrades, DIGITAL MARKETING CRM™ includes unlimited leads and advanced pipeline automation tools inside a flat monthly subscription." },
+                          { q: "How do I capture leads from my existing website?", a: "Simply copy our pre-configured webhook capture endpoint URL and paste it into any web form builder (Elementor, Typeform, Webflow, Shopify, etc.). Leads are automatically routed, scored, and logged in your dashboard in less than a second." },
+                          { q: "Can I connect third-party AI copywriting models?", a: "Yes, our native platform supports outgoing webhook API payload integrations with Jasper, Copy.ai, Klaviyo, and OpenAI API endpoints. Custom payload variables let you trigger external AI content workflows instantly." },
+                          { q: "Is there an offline-sync state mechanism?", a: "Absolutely. Our client-side app utilizes offline state synchronization. If your device loses network connections, the CRM queues lead captures, task reminders, and campaign updates locally, syncing them immediately once connection health is restored." },
+                          { q: "How secure is user-authored data stored in the vaults?", a: "We enforce high-security standards: TLS 1.3 encryption transit protocols, isolated sandboxed container architectures, and granular user role security rules. Our database ensures your customer records remain completely secure." },
+                          { q: "Is there a limit on the number of marketing emails I can trigger?", a: "No! Our founders tier allows you to deploy unlimited customer sequences without any artificial throttling or upcharges." },
+                          { q: "Does DIGITAL MARKETING CRM™ support multi-user collaboration?", a: "Yes, the full platform supports admin role structures, allowing managers to assign opportunities to sales reps, log audit feeds, and track individual rep conversion rates." },
+                          { q: "What is your refund and trial cancellation policy?", a: "We offer a 30-day risk-free money back guarantee. You can cancel your subscription inside our self-service billing tab with a single click, no questionnaires required." }
+                        ].map((faq, index) => (
+                          <div key={index} className="bg-slate-950 rounded-lg border border-slate-850 overflow-hidden">
+                            <button
+                              onClick={() => setSelectedCrmFaq(selectedCrmFaq === index ? null : index)}
+                              className="w-full text-left p-4 flex items-center justify-between text-xs font-black text-white hover:bg-slate-900 transition-all"
+                            >
+                              <span>{faq.q}</span>
+                              <ChevronRight className={`w-4 h-4 text-indigo-400 transition-transform ${selectedCrmFaq === index ? "rotate-90" : ""}`} />
+                            </button>
+                            {selectedCrmFaq === index && (
+                              <div className="p-4 pt-0 text-xs text-slate-400 leading-relaxed border-t border-slate-900 bg-slate-950/60 font-medium">
+                                {faq.a}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <>
+                  {/* Global Sovereign Level */}
+                  <div className="lg:col-span-7 bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-6">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <div>
+                        <h3 className="text-2xl font-black text-white">{currentJurisdictionObj.name}</h3>
+                        <p className="text-xs text-amber-400 font-mono mt-1 font-bold">
+                          {currentJurisdictionObj.legal_system}
+                        </p>
+                      </div>
+                      <span className="text-4xl font-extrabold text-slate-800">{currentJurisdictionObj.id}</span>
+                    </div>
 
-              </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
+                        <div className="flex items-center gap-2 mb-2">
+                          <FileText className="w-4 h-4 text-indigo-400" />
+                          <span className="text-xs font-black uppercase text-slate-300">Constitutional Source</span>
+                        </div>
+                        <p className="text-xs text-slate-100 font-bold mb-3">{currentJurisdictionObj.constitution_name}</p>
+                        <a
+                          href={currentJurisdictionObj.constitution_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
+                        >
+                          Official Constitution Link <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Scale className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs font-black uppercase text-slate-300">Legislation Portal</span>
+                        </div>
+                        <p className="text-xs text-slate-100 font-bold mb-3">{currentJurisdictionObj.federal_legislation_portal_name}</p>
+                        <a
+                          href={currentJurisdictionObj.federal_legislation_portal_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
+                        >
+                          Official Justice Laws <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Landmark className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-black uppercase text-slate-300">Highest Court</span>
+                        </div>
+                        <p className="text-xs text-slate-100 font-bold mb-3">{currentJurisdictionObj.supreme_court_name}</p>
+                        <a
+                          href={currentJurisdictionObj.supreme_court_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
+                        >
+                          Supreme Court website <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      <div className="bg-slate-900/80 p-4 rounded-lg border border-slate-800/80">
+                        <div className="flex items-center gap-2 mb-2">
+                          <BookOpen className="w-4 h-4 text-teal-400" />
+                          <span className="text-xs font-black uppercase text-slate-300">Comparative Research</span>
+                        </div>
+                        <p className="text-xs text-slate-100 font-bold mb-3">LII Aggregated Gateway Guide</p>
+                        <a
+                          href={currentJurisdictionObj.research_guide}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-amber-400 font-bold hover:underline flex items-center gap-1.5"
+                        >
+                          Access Repository Link <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Trigger to send selection target straight into AI chat assistant */}
+                    <div className="bg-gradient-to-r from-indigo-950 to-slate-900 p-4 rounded-lg border border-indigo-500/20 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Grounded AI Question Routing
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Need help explaining the federal court rules of {currentJurisdictionObj.name}?</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setChatMessage(`How does the constitutional separation of powers work in ${currentJurisdictionObj.name}? Explain key jurisdictions.`);
+                          setActiveTab("counsel");
+                          showToast(`Prompt created contextually for ${currentJurisdictionObj.name}`);
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black px-4 py-2 uppercase tracking-wider rounded-md flex items-center gap-1.5 shadow"
+                      >
+                        Query AI Counselor <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Subnational State / Province Selection if Available */}
+                  <div className="lg:col-span-5 bg-slate-950 p-6 rounded-xl border border-slate-800 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-2 h-2 bg-amber-400 rounded-full"></div>
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
+                          Constitutional Guide: Provinces & States ({currentJurisdictionObj.id})
+                        </h3>
+                      </div>
+
+                      {currentJurisdictionObj.subnational && currentJurisdictionObj.subnational.length > 0 ? (
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3 bg-slate-900 p-2 border border-slate-800 rounded-lg">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Subnational Region:</label>
+                            <select
+                              id="subnational-selector"
+                              value={selectedSubnational}
+                              onChange={(e) => setSelectedSubnational(e.target.value)}
+                              className="bg-slate-800 text-white text-xs font-bold p-1 px-2 border border-slate-600 rounded flex-1 outline-none"
+                            >
+                              {currentJurisdictionObj.subnational.map((sub) => (
+                                <option key={sub.id} value={sub.id}>
+                                  {sub.name} (Capital: {sub.capital})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Rendering selected subnational */}
+                          {(() => {
+                            const currentSub = currentJurisdictionObj.subnational.find((s) => s.id === selectedSubnational) || currentJurisdictionObj.subnational[0];
+                            if (!currentSub) return null;
+                            return (
+                              <div className="space-y-3 bg-slate-900/60 p-4 border border-slate-800 rounded-lg">
+                                <h4 className="text-base font-bold text-white flex items-center gap-1.5">
+                                  <span className="text-amber-300">⚖️</span> {currentSub.name} ({currentSub.id})
+                                </h4>
+                                
+                                <p className="text-xs text-slate-300 leading-relaxed font-medium bg-slate-950 p-2.5 rounded border border-slate-800">
+                                  <strong className="text-slate-400">Legal Family / System Notes:</strong> {currentSub.legal_system_notes}
+                                </p>
+
+                                <div className="space-y-2 pt-2">
+                                  <div className="flex items-center justify-between text-xs bg-slate-950/80 p-2 rounded">
+                                    <span className="text-slate-400">Official Legislation:</span>
+                                    <a href={currentSub.official_legislation_portal_url} target="_blank" rel="noreferrer" className="text-amber-400 font-bold hover:underline flex items-center gap-1">
+                                      {currentSub.official_legislation_portal_name} <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs bg-slate-950/80 p-2 rounded">
+                                    <span className="text-slate-400">Highest Court:</span>
+                                    <a href={currentSub.highest_court_url} target="_blank" rel="noreferrer" className="text-amber-400 font-bold hover:underline flex items-center gap-1">
+                                      {currentSub.highest_court_name} <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  </div>
+                                  {currentSub.justice_ministry_url && (
+                                    <div className="flex items-center justify-between text-xs bg-slate-950/80 p-2 rounded">
+                                      <span className="text-slate-400">Ministry of Justice / Attorney General:</span>
+                                      <a href={currentSub.justice_ministry_url} target="_blank" rel="noreferrer" className="text-amber-400 font-bold hover:underline flex items-center gap-1">
+                                        Official Department <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="p-10 border border-dashed border-slate-800 text-center rounded-lg">
+                          <Info className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+                          <p className="text-xs text-slate-400">
+                            This sovereign jurisdiction is consolidated heavily at the federal tier or operates as a unitary state. No major subnational databases mapped.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-slate-800">
+                      <p className="text-[11px] text-slate-500 italic">
+                        Disclaimers: All external repositories linked directly are public official government portals. ALL LEGAL MATTERS AI is grounded on actual regional laws, but does not provide active, unsolicited non-audited local legal advice.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Multi-Jurisdiction Comparisons Table & Map Hub */}
               <div id="jurisdiction-comparison-section" className="bg-slate-950 p-6 rounded-xl border border-slate-800">
@@ -3935,6 +5033,15 @@ This power is durable and persists through any subsequent incapacity.`;
                               hourlyRate: 250 + Math.floor(Math.random() * 4) * 30,
                               rating: parseFloat((4.6 + Math.random() * 0.4).toFixed(1)),
                               availabilityMap: { "Mon": 60, "Tue": 80, "Wed": 50, "Thu": 70, "Fri": 30 },
+                              availabilityHours: {
+                                "Mon": ["09:00 AM", "10:00 AM", "02:00 PM"],
+                                "Tue": ["10:00 AM", "11:30 AM", "04:00 PM"],
+                                "Wed": ["09:00 AM", "02:00 PM", "04:00 PM"],
+                                "Thu": ["10:00 AM", "11:30 AM", "02:00 PM"],
+                                "Fri": ["09:00 AM", "11:30 AM", "04:00 PM"],
+                                "Sat": ["10:00 AM", "02:00 PM"],
+                                "Sun": ["11:30 AM", "04:00 PM"]
+                              },
                               reviews: reviewsList[Math.floor(Math.random() * reviewsList.length)]
                             };
 
@@ -4052,6 +5159,15 @@ This power is durable and persists through any subsequent incapacity.`;
                               hourlyRate: newAttRate,
                               rating: 5.0,
                               availabilityMap: { "Mon": 90, "Tue": 90, "Wed": 90, "Thu": 90, "Fri": 90 },
+                              availabilityHours: {
+                                "Mon": ["09:00 AM", "10:00 AM", "02:00 PM"],
+                                "Tue": ["10:00 AM", "11:30 AM", "04:00 PM"],
+                                "Wed": ["09:00 AM", "02:00 PM", "04:00 PM"],
+                                "Thu": ["10:00 AM", "11:30 AM", "02:00 PM"],
+                                "Fri": ["09:00 AM", "11:30 AM", "04:00 PM"],
+                                "Sat": ["10:00 AM", "02:00 PM"],
+                                "Sun": ["11:30 AM", "04:00 PM"]
+                              },
                               reviews: ["Roster attorney verified. Newly provisioned on regional compliance register."]
                             };
 
@@ -4242,13 +5358,15 @@ This power is durable and persists through any subsequent incapacity.`;
                           <select
                             value={bookingTime}
                             onChange={(e) => setBookingTime(e.target.value)}
+                            required
                             className="w-full bg-slate-950 text-xs text-slate-100 p-2 border border-slate-700 rounded-md"
                           >
-                            <option value="09:00 AM">09:00 AM</option>
-                            <option value="10:00 AM">10:00 AM</option>
-                            <option value="11:30 AM">11:30 AM</option>
-                            <option value="02:00 PM">02:00 PM</option>
-                            <option value="04:00 PM">04:00 PM</option>
+                            {(selectedAttorney?.availabilityHours?.[getDayOfWeek(bookingDate)] || []).map((h) => (
+                              <option key={h} value={h}>{h}</option>
+                            ))}
+                            {(!selectedAttorney?.availabilityHours?.[getDayOfWeek(bookingDate)] || selectedAttorney.availabilityHours[getDayOfWeek(bookingDate)].length === 0) && (
+                              <option value="">No Slots Available (Toggle hours in portal grid below)</option>
+                            )}
                           </select>
                         </div>
                       </div>
@@ -4317,6 +5435,60 @@ This power is durable and persists through any subsequent incapacity.`;
                         </div>
                       </div>
 
+                      {/* SMS & Email Reminders Configuration */}
+                      <div className="bg-slate-900 p-3 border border-slate-800 rounded-lg space-y-3 font-sans mt-2">
+                        <div className="flex items-center gap-1.5 border-b border-slate-800/60 pb-1.5">
+                          <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+                          <span className="text-[9.5px] font-black uppercase tracking-wider text-indigo-400 font-mono">Consultation Reminders Setup</span>
+                        </div>
+                        
+                        <div className="space-y-2.5">
+                          <div className="space-y-1.5">
+                            <label className="flex items-center gap-2 text-[10.5px] text-slate-300 font-medium cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={smsReminder}
+                                onChange={(e) => setSmsReminder(e.target.checked)}
+                                className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-1 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <span>Enable SMS Reminders</span>
+                            </label>
+                            {smsReminder && (
+                              <input
+                                type="tel"
+                                required
+                                placeholder="Enter mobile phone: e.g. +1 (555) 019-2834"
+                                value={reminderPhone}
+                                onChange={(e) => setReminderPhone(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white placeholder-slate-600 font-mono outline-none focus:border-indigo-500"
+                              />
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="flex items-center gap-2 text-[10.5px] text-slate-300 font-medium cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={emailReminder}
+                                onChange={(e) => setEmailReminder(e.target.checked)}
+                                className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-1 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <span>Enable Email Reminders</span>
+                            </label>
+                            {emailReminder && (
+                              <input
+                                type="email"
+                                required
+                                placeholder="Enter reminder email"
+                                value={reminderEmail}
+                                onChange={(e) => setReminderEmail(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white placeholder-slate-600 font-mono outline-none focus:border-indigo-500"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-2 pt-1 font-sans">
                         <input
                           type="checkbox"
@@ -4338,6 +5510,53 @@ This power is durable and persists through any subsequent incapacity.`;
                       <Calendar className="w-4 h-4" /> Assemble Reservation Escrow
                     </button>
                   </form>
+
+                  {/* Attorney Weekly Availability Hours Editor */}
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 space-y-3 animate-fadeIn">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-1.5 text-indigo-400">
+                        <Clock className="w-4 h-4 text-indigo-400" />
+                        <span className="text-[11px] font-black uppercase tracking-wider font-sans">Counsel Weekly Availability Grid</span>
+                      </div>
+                      <span className="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-900/60 font-mono font-bold px-1.5 py-0.5 rounded">
+                        PORTAL VIEW
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      Click/toggle specific hour slots for <strong>{selectedAttorney?.name}</strong>. The booking calendar's hour options dynamically update based on these selections.
+                    </p>
+                    
+                    <div className="space-y-2 pt-1">
+                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => {
+                        const dayHours = selectedAttorney?.availabilityHours?.[day] || [];
+                        return (
+                          <div key={day} className="grid grid-cols-12 gap-1.5 items-center border-b border-slate-800/40 pb-2 last:border-0 last:pb-0">
+                            <span className="col-span-2 text-[10px] font-mono font-bold text-slate-300">{day}</span>
+                            <div className="col-span-10 flex flex-wrap gap-1">
+                              {["09:00 AM", "10:00 AM", "11:30 AM", "02:00 PM", "04:00 PM"].map((hour) => {
+                                const isSelected = dayHours.includes(hour);
+                                return (
+                                  <button
+                                    key={hour}
+                                    type="button"
+                                    onClick={() => toggleAttorneyHour(day, hour)}
+                                    className={`text-[9px] font-mono px-2 py-0.5 rounded transition-all flex items-center gap-1 font-bold border ${
+                                      isSelected
+                                        ? "bg-emerald-950/80 border-emerald-500 text-emerald-400 hover:bg-emerald-900"
+                                        : "bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700 hover:text-slate-300"
+                                    }`}
+                                  >
+                                    <span>{hour}</span>
+                                    <span className="text-[8px] opacity-70">{isSelected ? "✓" : "+"}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
 
                   <div className="space-y-3 pt-6 border-t border-slate-800">
                     
@@ -4362,18 +5581,28 @@ This power is durable and persists through any subsequent incapacity.`;
                         >
                           Past Bookings ({pastBookings.length})
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setBookingSubTab("analytics")}
+                          className={`text-[10px] font-black uppercase tracking-wider transition-all pb-1 outline-none ${
+                            bookingSubTab === "analytics" ? "text-indigo-400 border-b-2 border-indigo-500" : "text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          Analytics 📊
+                        </button>
                       </div>
-                      <span className="text-[9px] text-slate-500 font-mono font-bold">REGISTRY COUNTER</span>
+                      <span className="text-[9px] text-slate-500 font-mono font-bold">REGISTRY PORTAL</span>
                     </div>
 
-                    {bookingSubTab === "upcoming" ? (
-                      <div className="space-y-2 max-h-[220px] overflow-y-auto animate-fadeIn">
+                    {bookingSubTab === "upcoming" && (
+                      <div className="space-y-2 max-h-[350px] overflow-y-auto animate-fadeIn">
                         {bookings.map((bk) => (
-                          <div key={bk.id} className="p-3 bg-slate-900 border border-slate-800 rounded-md text-[11px]">
+                          <div key={bk.id} className="p-3 bg-slate-900 border border-slate-800 rounded-md text-[11px] space-y-2">
                             <div className="flex items-center justify-between">
                               <div>
                                 <p className="font-extrabold text-white uppercase font-sans">{bk.lawyerName}</p>
                                 <p className="text-[10px] text-slate-400 font-mono">{bk.date} @ {bk.time} ({bk.duration} mins)</p>
+                                <p className="text-[9.5px] text-indigo-300 font-mono">Retainer processed: ${bk.retainerFee}</p>
                               </div>
                               <div className="text-right shrink-0">
                                 <span className="bg-emerald-950 border border-emerald-500 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1">CONFIRMED</span>
@@ -4385,8 +5614,26 @@ This power is durable and persists through any subsequent incapacity.`;
                               </div>
                             </div>
 
+                            {/* Reminders visual badge indicators */}
+                            {(bk.smsReminder || bk.emailReminder) && (
+                              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/40">
+                                {bk.smsReminder && (
+                                  <span className="text-[8.5px] font-mono font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-900/60 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <Smartphone className="w-2.5 h-2.5 text-indigo-400" />
+                                    SMS Reminder to {bk.reminderPhone}
+                                  </span>
+                                )}
+                                {bk.emailReminder && (
+                                  <span className="text-[8.5px] font-mono font-bold bg-sky-950/80 text-sky-300 border border-sky-900/60 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <Mail className="w-2.5 h-2.5 text-sky-400" />
+                                    Email: {bk.reminderEmail}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
                             {(bk.caseNotes || bk.legalQuestions) && (
-                              <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
+                              <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
                                 {bk.caseNotes && (
                                   <div className="bg-slate-950/50 p-2 rounded border border-slate-800">
                                     <p className="text-[9px] font-black uppercase text-indigo-400 tracking-wider font-mono">Case Notes:</p>
@@ -4401,6 +5648,30 @@ This power is durable and persists through any subsequent incapacity.`;
                                 )}
                               </div>
                             )}
+
+                            {/* Complete trigger button */}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const completedBooking = {
+                                  ...bk,
+                                  status: "Completed"
+                                };
+                                try {
+                                  await setDoc(doc(db, "bookings", bk.id), completedBooking);
+                                } catch (err) {
+                                  console.warn("Could not sync complete status with firestore", err);
+                                }
+                                setBookings(prev => prev.filter(x => x.id !== bk.id));
+                                setPastBookings(prev => [completedBooking, ...prev]);
+                                setBookingSubTab("past");
+                                setRatingBookingId(bk.id); // prompt for review immediately
+                                showToast("Consultation marked as Completed! Please rate your session.");
+                              }}
+                              className="w-full mt-2 py-1.5 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold rounded transition-all cursor-pointer text-center uppercase tracking-wider"
+                            >
+                              ✓ Mark Consultation Completed
+                            </button>
                           </div>
                         ))}
 
@@ -4408,40 +5679,267 @@ This power is durable and persists through any subsequent incapacity.`;
                           <p className="text-center text-[10px] text-slate-500 italic py-4 font-sans">No upcoming scheduled appointments booked.</p>
                         )}
                       </div>
-                    ) : (
-                      <div className="space-y-2 max-h-[220px] overflow-y-auto animate-fadeIn">
-                        {pastBookings.map((bk) => (
-                          <div key={bk.id} className="p-3 bg-slate-900/60 border border-slate-800 rounded-md text-[11px]">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-extrabold text-slate-300 uppercase font-sans">{bk.lawyerName}</p>
-                                <p className="text-[10px] text-slate-400 font-mono">{bk.date} @ {bk.time} ({bk.duration} mins)</p>
-                                <p className="text-[9.5px] text-slate-500 font-mono">Retainer cleared: ${bk.retainerFee}</p>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <span className="bg-slate-800 border border-slate-700 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1">COMPLETED</span>
-                                <span className="text-[8.5px] text-slate-500 font-semibold block font-sans">Audit Invoice Released</span>
-                              </div>
-                            </div>
+                    )}
 
-                            {(bk.caseNotes || bk.legalQuestions) && (
-                              <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
-                                {bk.caseNotes && (
-                                  <div className="bg-slate-950/40 p-2 rounded border border-slate-800">
-                                    <p className="text-[9px] font-black uppercase text-indigo-400 tracking-wider font-mono">Case Notes:</p>
-                                    <p className="text-[10.5px] text-slate-400 font-sans mt-0.5 whitespace-pre-wrap">{bk.caseNotes}</p>
-                                  </div>
-                                )}
-                                {bk.legalQuestions && (
-                                  <div className="bg-slate-950/40 p-2 rounded border border-slate-800">
-                                    <p className="text-[9px] font-black uppercase text-emerald-400 tracking-wider font-mono">Specific Questions:</p>
-                                    <p className="text-[10.5px] text-slate-400 font-sans mt-0.5 whitespace-pre-wrap">{bk.legalQuestions}</p>
-                                  </div>
-                                )}
+                    {bookingSubTab === "past" && (
+                      <div className="space-y-2 max-h-[350px] overflow-y-auto animate-fadeIn">
+                        {pastBookings.map((bk) => {
+                          const isRatingThis = ratingBookingId === bk.id;
+                          return (
+                            <div key={bk.id} className="p-3 bg-slate-900/60 border border-slate-800 rounded-md text-[11px] space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-extrabold text-slate-300 uppercase font-sans">{bk.lawyerName}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono">{bk.date} @ {bk.time} ({bk.duration} mins)</p>
+                                  <p className="text-[9.5px] text-slate-500 font-mono">Retainer cleared: ${bk.retainerFee}</p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="bg-slate-800 border border-slate-700 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1">COMPLETED</span>
+                                  <span className="text-[8.5px] text-slate-500 font-semibold block font-sans">Audit Invoice Released</span>
+                                </div>
                               </div>
-                            )}
+
+                              {/* Ratings display or rating form */}
+                              {bk.rating ? (
+                                <div className="p-2 bg-slate-950/40 border border-slate-800 rounded space-y-1">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9.5px] font-mono font-black text-amber-400 uppercase">User Feedback:</span>
+                                    <div className="flex text-amber-400">
+                                      {Array.from({ length: bk.rating }).map((_, i) => (
+                                        <Star key={i} className="w-2.5 h-2.5 fill-amber-400 stroke-amber-400" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                  {bk.feedbackComment && (
+                                    <p className="text-[10.5px] text-slate-300 font-sans italic">"{bk.feedbackComment}"</p>
+                                  )}
+                                </div>
+                              ) : isRatingThis ? (
+                                <div className="p-3 bg-indigo-950/20 border border-indigo-500/30 rounded-lg space-y-2.5 animate-fadeIn">
+                                  <p className="text-[10px] font-black uppercase text-indigo-400 tracking-wider font-mono">Post-Consultation Session Review</p>
+                                  
+                                  <div>
+                                    <label className="text-[9.5px] text-slate-400 block mb-1 font-bold">Select Star Rating (1-5):</label>
+                                    <div className="flex gap-1.5">
+                                      {[1, 2, 3, 4, 5].map((val) => (
+                                        <button
+                                          key={val}
+                                          type="button"
+                                          onClick={() => setFeedbackRating(val)}
+                                          className="p-1 transition-transform active:scale-90"
+                                        >
+                                          <Star
+                                            className={`w-5 h-5 ${
+                                              val <= feedbackRating
+                                                ? "fill-amber-400 stroke-amber-400"
+                                                : "stroke-slate-600 hover:stroke-amber-400"
+                                            }`}
+                                          />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[9.5px] text-slate-400 block mb-1 font-bold">Comments / Experience:</label>
+                                    <textarea
+                                      value={feedbackComment}
+                                      onChange={(e) => setFeedbackComment(e.target.value)}
+                                      placeholder="How was your discussion with counsel? (optional)"
+                                      className="w-full bg-slate-950 border border-slate-705 rounded p-1.5 text-xs text-white placeholder-slate-600 font-sans outline-none focus:border-indigo-500 h-14 resize-none"
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-end gap-1.5 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setRatingBookingId(null)}
+                                      className="px-2.5 py-1 bg-slate-800 text-slate-300 text-[10px] font-bold rounded"
+                                    >
+                                      Later
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleFeedbackSubmit(bk.id)}
+                                      className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider rounded"
+                                    >
+                                      Submit Feedback
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRatingBookingId(bk.id);
+                                    setFeedbackRating(5);
+                                    setFeedbackComment("");
+                                  }}
+                                  className="w-full py-1 bg-indigo-950/40 hover:bg-indigo-900/40 border border-indigo-900/40 text-indigo-300 text-[10px] font-bold rounded transition-all cursor-pointer text-center"
+                                >
+                                  ★ Rate & Leave Review Feedback
+                                </button>
+                              )}
+
+                              {(bk.caseNotes || bk.legalQuestions) && (
+                                <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
+                                  {bk.caseNotes && (
+                                    <div className="bg-slate-950/40 p-2 rounded border border-slate-800">
+                                      <p className="text-[9px] font-black uppercase text-indigo-400 tracking-wider font-mono">Case Notes:</p>
+                                      <p className="text-[10.5px] text-slate-400 font-sans mt-0.5 whitespace-pre-wrap">{bk.caseNotes}</p>
+                                    </div>
+                                  )}
+                                  {bk.legalQuestions && (
+                                    <div className="bg-slate-950/40 p-2 rounded border border-slate-800">
+                                      <p className="text-[9px] font-black uppercase text-emerald-400 tracking-wider font-mono">Specific Questions:</p>
+                                      <p className="text-[10.5px] text-slate-400 font-sans mt-0.5 whitespace-pre-wrap">{bk.legalQuestions}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {bookingSubTab === "analytics" && (
+                      <div className="space-y-4 p-1.5 animate-fadeIn max-h-[420px] overflow-y-auto">
+                        
+                        {/* Dynamic KPIs */}
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="bg-slate-900/60 p-2.5 border border-slate-800 rounded">
+                            <span className="text-[8px] font-mono font-bold text-slate-400 block uppercase">Total Scheduled</span>
+                            <span className="text-sm font-black text-white font-mono">
+                              {bookings.length + pastBookings.length}
+                            </span>
                           </div>
-                        ))}
+                          <div className="bg-slate-900/60 p-2.5 border border-slate-800 rounded">
+                            <span className="text-[8px] font-mono font-bold text-slate-400 block uppercase">Retainer Fees</span>
+                            <span className="text-sm font-black text-emerald-400 font-mono">
+                              ${[...bookings, ...pastBookings].reduce((acc, x) => acc + x.retainerFee, 0)}
+                            </span>
+                          </div>
+                          <div className="bg-slate-900/60 p-2.5 border border-slate-800 rounded">
+                            <span className="text-[8px] font-mono font-bold text-slate-400 block uppercase">Workload</span>
+                            <span className="text-sm font-black text-indigo-400 font-mono">
+                              {[...bookings, ...pastBookings].reduce((acc, x) => acc + x.duration, 0)}m
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Recharts Bar Chart: Retainer Fees Collected & Booked Sessions per advocate */}
+                        <div className="bg-slate-900/40 p-3 border border-slate-800 rounded-lg space-y-2">
+                          <div className="flex justify-between items-center border-b border-slate-800 pb-1.5">
+                            <span className="text-[9.5px] font-mono font-black uppercase text-slate-300">Revenue per Counsel Member ($ USD)</span>
+                            <span className="text-[8.5px] text-emerald-400 font-mono font-bold">ESCROW TOTALS</span>
+                          </div>
+                          <div className="w-full h-44 font-mono text-[9px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={(() => {
+                                  const all = [...bookings, ...pastBookings];
+                                  const res: { [name: string]: { name: string; revenue: number; sessions: number } } = {};
+                                  attorneys.forEach(att => {
+                                    const short = att.name.replace("Hon. ", "").replace(", QC", "").replace(", Esq.", "").replace("Dr. ", "");
+                                    res[att.id] = { name: short, revenue: 0, sessions: 0 };
+                                  });
+                                  all.forEach(b => {
+                                    if (res[b.lawyerId]) {
+                                      res[b.lawyerId].revenue += b.retainerFee;
+                                      res[b.lawyerId].sessions += 1;
+                                    } else {
+                                      const short = b.lawyerName.replace("Hon. ", "").replace(", QC", "").replace(", Esq.", "").replace("Dr. ", "");
+                                      res[b.lawyerId] = { name: short, revenue: b.retainerFee, sessions: 1 };
+                                    }
+                                  });
+                                  return Object.values(res);
+                                })()}
+                                margin={{ top: 5, right: 5, left: -25, bottom: 5 }}
+                              >
+                                <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} />
+                                <YAxis stroke="#64748b" fontSize={9} tickLine={false} />
+                                <Tooltip
+                                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: "6px", fontSize: "10px", color: "#fff" }}
+                                  cursor={{ fill: "rgba(255,255,255,0.03)" }}
+                                />
+                                <Bar dataKey="revenue" fill="#6366f1" radius={[2, 2, 0, 0]} barSize={16}>
+                                  {(() => {
+                                    const colors = ["#6366f1", "#10b981", "#f59e0b", "#3b82f6"];
+                                    return attorneys.map((_, i) => (
+                                      <Cell key={i} fill={colors[i % colors.length]} />
+                                    ));
+                                  })()}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Recharts Pie Chart: Workload Allocation in minutes */}
+                        <div className="bg-slate-900/40 p-3 border border-slate-800 rounded-lg space-y-2">
+                          <div className="flex justify-between items-center border-b border-slate-800 pb-1.5">
+                            <span className="text-[9.5px] font-mono font-black uppercase text-slate-300">Counsel Workload Distribution (Minutes)</span>
+                            <span className="text-[8.5px] text-indigo-400 font-mono font-bold">TIME METRICS</span>
+                          </div>
+                          <div className="w-full h-44 font-mono text-[9px] flex items-center justify-between gap-2">
+                            <div className="w-[55%] h-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={(() => {
+                                      const all = [...bookings, ...pastBookings];
+                                      const res: { [name: string]: { name: string; value: number } } = {};
+                                      attorneys.forEach(att => {
+                                        const short = att.name.replace("Hon. ", "").replace(", QC", "").replace(", Esq.", "").replace("Dr. ", "");
+                                        res[att.id] = { name: short, value: 0 };
+                                      });
+                                      all.forEach(b => {
+                                        if (res[b.lawyerId]) {
+                                          res[b.lawyerId].value += b.duration;
+                                        } else {
+                                          const short = b.lawyerName.replace("Hon. ", "").replace(", QC", "").replace(", Esq.", "").replace("Dr. ", "");
+                                          res[b.lawyerId] = { name: short, value: b.duration };
+                                        }
+                                      });
+                                      return Object.values(res).filter(x => x.value > 0);
+                                    })()}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={22}
+                                    outerRadius={45}
+                                    paddingAngle={3}
+                                    dataKey="value"
+                                  >
+                                    {attorneys.map((_, idx) => {
+                                      const colors = ["#6366f1", "#10b981", "#f59e0b", "#3b82f6"];
+                                      return <Cell key={`cell-${idx}`} fill={colors[idx % colors.length]} />;
+                                    })}
+                                  </Pie>
+                                  <Tooltip contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: "6px", fontSize: "10px", color: "#fff" }} />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div className="w-[45%] text-[10px] space-y-1 text-slate-400">
+                              {(() => {
+                                const colors = ["#6366f1", "#10b981", "#f59e0b", "#3b82f6"];
+                                return attorneys.map((att, idx) => {
+                                  const totalMins = [...bookings, ...pastBookings]
+                                    .filter(b => b.lawyerId === att.id)
+                                    .reduce((acc, b) => acc + b.duration, 0);
+                                  return (
+                                    <div key={att.id} className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colors[idx % colors.length] }} />
+                                      <span className="truncate max-w-[80px] font-sans font-medium text-slate-300">{att.name.split(",")[0]}</span>
+                                      <span className="text-slate-500 font-mono text-[9px]">({totalMins}m)</span>
+                                    </div>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+
                       </div>
                     )}
 

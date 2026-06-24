@@ -811,6 +811,15 @@ export const MOCH_ATTORNEYS: Attorney[] = [
     hourlyRate: 350,
     rating: 4.9,
     availabilityMap: { "Mon": 85, "Tue": 90, "Wed": 30, "Thu": 75, "Fri": 15 },
+    availabilityHours: {
+      "Mon": ["09:00 AM", "10:00 AM", "11:30 AM", "02:00 PM"],
+      "Tue": ["09:00 AM", "10:00 AM", "11:30 AM", "02:00 PM", "04:00 PM"],
+      "Wed": ["10:00 AM", "11:30 AM"],
+      "Thu": ["09:00 AM", "10:00 AM", "02:00 PM", "04:00 PM"],
+      "Fri": ["11:30 AM", "02:00 PM"],
+      "Sat": [],
+      "Sun": []
+    },
     reviews: [
       "Clara reviewed our lease sublease contract and spotted critical issues in 10 minutes.",
       "Extremely sharp advisory regarding Ontario Business Corporations Act."
@@ -826,6 +835,15 @@ export const MOCH_ATTORNEYS: Attorney[] = [
     hourlyRate: 280,
     rating: 4.8,
     availabilityMap: { "Mon": 40, "Tue": 60, "Wed": 95, "Thu": 40, "Fri": 80 },
+    availabilityHours: {
+      "Mon": ["10:00 AM", "02:00 PM", "04:00 PM"],
+      "Tue": ["09:00 AM", "10:00 AM", "11:30 AM"],
+      "Wed": ["09:00 AM", "10:00 AM", "11:30 AM", "02:00 PM", "04:00 PM"],
+      "Thu": ["10:00 AM", "02:00 PM"],
+      "Fri": ["09:00 AM", "11:30 AM", "04:00 PM"],
+      "Sat": ["10:00 AM", "02:00 PM"],
+      "Sun": []
+    },
     reviews: [
       "Invaluable advice on setting up a subsidiary in Lagos, Nigeria.",
       "Clear, actionable strategy on Nigerian custom guidelines and tax rules."
@@ -841,6 +859,15 @@ export const MOCH_ATTORNEYS: Attorney[] = [
     hourlyRate: 300,
     rating: 4.7,
     availabilityMap: { "Mon": 20, "Tue": 30, "Wed": 40, "Thu": 90, "Fri": 95 },
+    availabilityHours: {
+      "Mon": ["09:00 AM"],
+      "Tue": ["09:00 AM", "02:00 PM"],
+      "Wed": ["11:30 AM", "02:00 PM", "04:00 PM"],
+      "Thu": ["09:00 AM", "10:00 AM", "11:30 AM", "02:00 PM", "04:00 PM"],
+      "Fri": ["09:00 AM", "10:00 AM", "11:30 AM", "02:00 PM", "04:00 PM"],
+      "Sat": [],
+      "Sun": []
+    },
     reviews: [
       "Helped us resolve a complex real estate dispute in Guadalajara perfectly.",
       "Perfect translation and explanation of Mexican Federal Civil procedures."

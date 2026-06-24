@@ -21,5 +21,9 @@ service cloud.firestore {
     match /jurisdictions_europe_core/{jurisdictionId} {
       allow read, write: if true;
     }
+
+    match /Europe_subnational/{subnationalId} {
+      allow read, write: if true;
+    }
   }
 }

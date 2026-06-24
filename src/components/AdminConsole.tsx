@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { collection, getDocs, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { seedEuropeJurisdictions } from "../utils/europeJurisdictions";
+import { seedEuropeJurisdictions, seedEuropeSubnationalJurisdictions } from "../utils/europeJurisdictions";
 
 interface AdminConsoleProps {
   currentUser: { email: string; name: string } | null;
@@ -297,11 +297,14 @@ export default function AdminConsole({ currentUser, showToast, onRefreshAll }: A
         <div className="flex gap-2">
           <button
             onClick={async () => {
-              if (window.confirm("Are you sure you want to re-seed/reset the jurisdictions_europe_core collection in Firestore?")) {
+              if (window.confirm("Are you sure you want to re-seed/reset the jurisdictions_europe_core & Europe_subnational collections in Firestore?")) {
                 setLoading(true);
                 try {
-                  await seedEuropeJurisdictions(true);
-                  showToast("🇪🇺 Jurisdictions collection seeded/reset successfully!");
+                  await Promise.all([
+                    seedEuropeJurisdictions(true),
+                    seedEuropeSubnationalJurisdictions(true)
+                  ]);
+                  showToast("🇪🇺 Europe core and subnational collections seeded/reset successfully!");
                 } catch (e) {
                   showToast("❌ Seeding failed.");
                 } finally {

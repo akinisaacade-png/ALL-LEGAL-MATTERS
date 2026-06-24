@@ -84,6 +84,12 @@ export interface ConsultationBooking {
   syncedWithCalendar: boolean;
   caseNotes?: string;
   legalQuestions?: string;
+  smsReminder?: boolean;
+  emailReminder?: boolean;
+  reminderPhone?: string;
+  reminderEmail?: string;
+  rating?: number;
+  feedbackComment?: string;
 }
 
 export interface Attorney {
@@ -97,4 +103,5 @@ export interface Attorney {
   rating: number;
   availabilityMap: { [day: string]: number }; // percentage of availability 0-100 for Mon-Fri
   reviews: string[];
+  availabilityHours?: { [day: string]: string[] };
 }
