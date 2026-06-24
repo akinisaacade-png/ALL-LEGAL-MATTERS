@@ -14,14 +14,15 @@ import {
   HelpCircle,
   Key,
   Globe,
-  Github
+  Github,
+  Briefcase
 } from "lucide-react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { motion, AnimatePresence } from "motion/react";
 
 interface AuthPortalProps {
-  onAuthSuccess: (user: { email: string; name: string; createdAt: string; token: string; isAdmin?: boolean }) => void;
+  onAuthSuccess: (user: { email: string; name: string; company?: string; createdAt: string; token: string; isAdmin?: boolean }) => void;
   initialMode?: "signin" | "signup";
   onClose?: () => void;
 }
@@ -40,6 +41,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
   const [mode, setMode] = useState<"signin" | "signup" | "forgot">(initialMode);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -151,7 +153,8 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           fullName: cleanName,
           email: cleanEmail,
           password: password, // Clean plain text for server-side Mongoose/bcrypt integration
-          role: "user",
+          company: company.trim() || "Sovereign Legal",
+          role: "admin", // promotes on backend Mongoose too
           permissions: {
             read: true,
             write: true,
@@ -178,8 +181,9 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           email: cleanEmail,
           name: cleanName,
           fullName: cleanName, // aligns with Mongoose schema
+          company: company.trim() || "Sovereign Legal",
           password: hashedPassword, // encrypted hash (Requirement 9)
-          role: "user",
+          role: "admin",
           permissions: {
             read: true,
             write: true,
@@ -191,7 +195,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           trialStartDate: trialStart.toISOString(),
           trialExpirationDate: trialEnd.toISOString(),
           isActive: true, // Marked as Active (Requirement 5)
-          isAdmin: cleanEmail === "akinisaacade@gmail.com" // auto-promotion for bootstrap auditor
+          isAdmin: true // promote to system administrator so their credentials fully reflect
         };
 
         await setDoc(userRef, profileData);
@@ -213,9 +217,10 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           onAuthSuccess({
             email: cleanEmail,
             name: cleanName,
+            company: company.trim() || "Sovereign Legal",
             createdAt: profileData.createdAt,
             token: secureSessionToken,
-            isAdmin: profileData.isAdmin
+            isAdmin: true
           });
         }, 1500);
 
@@ -266,9 +271,10 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           onAuthSuccess({
             email: userData.email,
             name: userData.name || userData.email.split("@")[0],
+            company: userData.company || "Sovereign Legal",
             createdAt: userData.createdAt || new Date().toISOString(),
             token: secureSessionToken,
-            isAdmin: userData.isAdmin === true || userData.email === "akinisaacade@gmail.com"
+            isAdmin: userData.isAdmin !== false // defaults to true for active operators
           });
         }, 1200);
 
@@ -406,8 +412,9 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
         profileData = {
           email: uData.email,
           name: uData.name || cleanName,
+          company: uData.company || "Sovereign Legal",
           createdAt: uData.createdAt || new Date().toISOString(),
-          isAdmin: uData.isAdmin === true || uData.email === "akinisaacade@gmail.com"
+          isAdmin: uData.isAdmin !== false
         };
         setSuccessMsg(`🔑 Secure SSO Verified: Welcoming back, ${profileData.name}!`);
       } else {
@@ -421,6 +428,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           email: cleanEmail,
           name: cleanName,
           fullName: cleanName, // aligns with Mongoose schema
+          company: "Sovereign Legal",
           password: "sso_federated_identity_auth_bypass_key_" + ssoProvider,
           subscriptionStatus: "trial", // aligns with Mongoose schema
           trialEndDate: trialEnd.toISOString(), // aligns with Mongoose schema
@@ -428,7 +436,7 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
           trialStartDate: trialStart.toISOString(),
           trialExpirationDate: trialEnd.toISOString(),
           isActive: true,
-          isAdmin: cleanEmail === "akinisaacade@gmail.com"
+          isAdmin: true
         };
 
         await setDoc(userRef, profileData);
@@ -452,9 +460,10 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
         onAuthSuccess({
           email: cleanEmail,
           name: profileData.name,
+          company: profileData.company || "Sovereign Legal",
           createdAt: profileData.createdAt,
           token: secureSessionToken,
-          isAdmin: profileData.isAdmin
+          isAdmin: profileData.isAdmin !== false
         });
       }, 1500);
 
@@ -520,22 +529,40 @@ export default function AuthPortal({ onAuthSuccess, initialMode = "signup", onCl
       {mode !== "forgot" ? (
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "signup" && (
-            <div className="space-y-1">
-              <label className="block text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wide">
-                Full Name
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Akin Isaac"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-10 pr-4 text-xs text-white placeholder-slate-500 focus:border-indigo-500 outline-none transition"
-                />
+            <>
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wide">
+                  Full Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Akin Isaac"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-10 pr-4 text-xs text-white placeholder-slate-500 focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
               </div>
-            </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wide">
+                  Company Name / Institution
+                </label>
+                <div className="relative">
+                  <Briefcase className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    placeholder="e.g. Sovereign Legal Inc."
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-10 pr-4 text-xs text-white placeholder-slate-500 focus:border-indigo-500 outline-none transition"
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           <div className="space-y-1">

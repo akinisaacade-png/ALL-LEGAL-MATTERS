@@ -118,7 +118,7 @@ export default function ComplianceDashboard({
         versionNumber: currentVerNum + 1,
         content: selectedDoc.content,
         editedAt: new Date().toISOString(),
-        editedBy: selectedDoc.uploadedBy || currentUser?.email || "akinisaacade@gmail.com",
+        editedBy: selectedDoc.uploadedBy || currentUser?.email || "guest@alllegalmatters.com",
         changeSummary: "Pre-Bulk Resolution Safeguard Baseline Snapshot",
         riskScore: selectedDoc.riskScore,
         clauses: selectedDoc.clauses ? [...selectedDoc.clauses] : [],
@@ -286,8 +286,8 @@ export default function ComplianceDashboard({
       // Timestamp
       const dateStr = new Date().toLocaleString();
       doc.text(`Generated At: ${dateStr} (Pacific Standard Time)`, 12, 29);
-      const auditorName = currentUser?.name || "Akin Isacc";
-      const auditorEmail = currentUser?.email || "akinisaacade@gmail.com";
+      const auditorName = currentUser?.name || "Sovereign Guest";
+      const auditorEmail = currentUser?.email || "guest@alllegalmatters.com";
       doc.text(`Target Auditor Recipient: ${auditorName} (${auditorEmail})`, 12, 34);
 
       // Section: Summary Index

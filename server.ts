@@ -419,7 +419,7 @@ Note: To enable fully tailored live Gemini AI analysis, plug your real Google AP
 
 // Document Upload & Interactive AI OCR Analysis
 app.post("/api/documents/upload", async (req, res) => {
-  const { name, category, content } = req.body;
+  const { name, category, content, uploadedBy } = req.body;
 
   if (!name || !content) {
     return res.status(400).json({ error: "File name and content are required." });
@@ -431,7 +431,7 @@ app.post("/api/documents/upload", async (req, res) => {
     id: newId,
     name,
     category: category || "general",
-    uploadedBy: "akinisaacade@gmail.com",
+    uploadedBy: uploadedBy || "guest@alllegalmatters.com",
     uploadedAt: new Date().toISOString(),
     size: `${Math.round(content.length / 1024)} KB`,
     status: "Analyzing",
@@ -503,7 +503,7 @@ app.get("/api/documents", (req, res) => {
 
 // Edit active document and generate a historical rollback version
 app.post("/api/documents/edit", async (req, res) => {
-  const { documentId, content, changeSummary } = req.body;
+  const { documentId, content, changeSummary, editedBy } = req.body;
   const doc = database.documents.find(d => d.id === documentId);
   if (!doc) {
     return res.status(404).json({ error: "Document not found." });
@@ -520,7 +520,7 @@ app.post("/api/documents/edit", async (req, res) => {
     versionNumber: currentVersionNum,
     content: doc.content,
     editedAt: doc.uploadedAt || new Date().toISOString(),
-    editedBy: doc.uploadedBy || "akinisaacade@gmail.com",
+    editedBy: doc.uploadedBy || "guest@alllegalmatters.com",
     changeSummary: doc.changeSummary || "Baseline snapshot draft",
     riskScore: doc.riskScore,
     clauses: doc.clauses ? [...doc.clauses] : [],
@@ -532,6 +532,7 @@ app.post("/api/documents/edit", async (req, res) => {
   // Apply new editable content
   doc.content = content;
   doc.uploadedAt = new Date().toISOString();
+  doc.uploadedBy = editedBy || doc.uploadedBy || "guest@alllegalmatters.com";
   doc.changeSummary = changeSummary || `Revision v${currentVersionNum + 1}`;
 
   // Re-run AI analysis if API client exists, otherwise generate logical risk reduction mock
@@ -604,7 +605,7 @@ app.post("/api/documents/restore", (req, res) => {
     versionNumber: backupVerNum,
     content: doc.content,
     editedAt: doc.uploadedAt || new Date().toISOString(),
-    editedBy: doc.uploadedBy || "akinisaacade@gmail.com",
+    editedBy: doc.uploadedBy || "guest@alllegalmatters.com",
     changeSummary: `Pre-restoration snapshot (Current Active: V${ver.versionNumber})`,
     riskScore: doc.riskScore,
     clauses: doc.clauses ? [...doc.clauses] : [],

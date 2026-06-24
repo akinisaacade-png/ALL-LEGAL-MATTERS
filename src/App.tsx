@@ -122,6 +122,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<{
     email: string;
     name: string;
+    company?: string;
     createdAt: string;
     token?: string;
     isAdmin?: boolean;
@@ -276,7 +277,7 @@ export default function App() {
     if (currentUser?.email) {
       setReminderEmail(currentUser.email);
     } else {
-      setReminderEmail("akinisaacade@gmail.com");
+      setReminderEmail("guest@alllegalmatters.com");
     }
   }, [currentUser]);
 
@@ -550,7 +551,7 @@ export default function App() {
           const res = await fetch(`/api/stripe/session-status?session_id=${sessionId}`);
           const data = await res.json();
           if (data && (data.payment_status === "paid" || data.status === "complete")) {
-            const userEmail = currentUser?.email || "akinisaacade@gmail.com";
+            const userEmail = currentUser?.email || "guest@alllegalmatters.com";
             // Write to Firestore for persistent subscriber data!
             try {
               await setDoc(doc(db, "subscriptions", userEmail.replace(/\./g, "_")), {
@@ -613,7 +614,7 @@ export default function App() {
   };
 
   const fetchSubscription = async () => {
-    const userEmail = currentUser?.email || "akinisaacade@gmail.com";
+    const userEmail = currentUser?.email || "guest@alllegalmatters.com";
     try {
       // 1. First, check Firestore for active subscription
       const docRef = doc(db, "subscriptions", userEmail.replace(/\./g, "_"));
@@ -655,7 +656,7 @@ export default function App() {
   };
 
   const registerAndCheckTrial = async () => {
-    const userEmail = currentUser?.email || "akinisaacade@gmail.com";
+    const userEmail = currentUser?.email || "guest@alllegalmatters.com";
     try {
       const userRef = doc(db, "users", userEmail.replace(/\./g, "_"));
       const userSnap = await getDoc(userRef);
@@ -951,7 +952,8 @@ export default function App() {
         body: JSON.stringify({
           documentId: selectedVaultDoc.id,
           content: activeEditContent,
-          changeSummary: changeSummaryText || "Revised contract guidelines"
+          changeSummary: changeSummaryText || "Revised contract guidelines",
+          editedBy: currentUser?.email || "guest@alllegalmatters.com"
         })
       });
       const data = await response.json();
@@ -990,7 +992,7 @@ export default function App() {
         versionNumber: currentVerNum,
         content: oldDoc.content,
         editedAt: oldDoc.uploadedAt || new Date().toISOString(),
-        editedBy: oldDoc.uploadedBy || "akinisaacade@gmail.com",
+        editedBy: oldDoc.uploadedBy || currentUser?.email || "guest@alllegalmatters.com",
         changeSummary: oldDoc.changeSummary || "Baseline snapshot draft",
         riskScore: oldDoc.riskScore,
         clauses: [...(oldDoc.clauses || [])],
@@ -1061,7 +1063,7 @@ export default function App() {
         versionNumber: backupVerNum,
         content: doc.content,
         editedAt: doc.uploadedAt || new Date().toISOString(),
-        editedBy: doc.uploadedBy || "akinisaacade@gmail.com",
+        editedBy: doc.uploadedBy || currentUser?.email || "guest@alllegalmatters.com",
         changeSummary: `Pre-restoration snapshot (Current Active: V${ver.versionNumber})`,
         riskScore: doc.riskScore,
         clauses: [...(doc.clauses || [])],
@@ -1376,7 +1378,8 @@ export default function App() {
         body: JSON.stringify({
           name: ocrDocName.endsWith(".pdf") || ocrDocName.endsWith(".docx") ? ocrDocName : `${ocrDocName}.pdf`,
           category: ocrDocCategory,
-          content: ocrText
+          content: ocrText,
+          uploadedBy: currentUser?.email || "guest@alllegalmatters.com"
         })
       });
       const resData = await response.json();
@@ -1838,10 +1841,14 @@ This power is durable and persists through any subsequent incapacity.`;
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-3 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+              <div className="flex items-center gap-3 bg-slate-900 p-2 rounded-lg border border-slate-800">
                 <div className="flex flex-col text-right pl-1">
-                  <span className="text-[9px] text-slate-500 font-mono font-bold">ACTIVE ROLE</span>
-                  <span className="text-xs font-extrabold text-indigo-300 truncate max-w-[120px] font-sans">{currentUser.name}</span>
+                  <span className="text-[9px] text-indigo-400 font-mono font-bold">
+                    {currentUser.company ? currentUser.company.toUpperCase() : "SOVEREIGN OPERATOR"}
+                  </span>
+                  <span className="text-xs font-extrabold text-slate-200 truncate max-w-[200px] font-sans">
+                    {currentUser.name}
+                  </span>
                 </div>
                 <button
                   id="btn-header-signout"
@@ -2126,7 +2133,7 @@ This power is durable and persists through any subsequent incapacity.`;
             <span>{currentUser ? "User Identity" : "Sign Up / Join"}</span>
           </button>
 
-          {(currentUser?.isAdmin || currentUser?.email === "akinisaacade@gmail.com") && (
+          {currentUser && (
             <button
               id="tab-btn-admin"
               onClick={() => setActiveTab("admin")}
@@ -2135,7 +2142,7 @@ This power is durable and persists through any subsequent incapacity.`;
               }`}
             >
               <Shield className="w-4 h-4 text-purple-400" />
-              <span>Admin Console</span>
+              <span>IAM & Users Console</span>
             </button>
           )}
 
@@ -4157,6 +4164,7 @@ This power is durable and persists through any subsequent incapacity.`;
                                             body: JSON.stringify({
                                               documentId: selectedVaultDoc.id,
                                               content: replacedContent,
+                                              editedBy: currentUser?.email || "guest@alllegalmatters.com",
                                               changeSummary: `Auto-Remeditated: Resolved ${alert.ruleName} compliance flag.`
                                             })
                                           });
@@ -4186,7 +4194,7 @@ This power is durable and persists through any subsequent incapacity.`;
                                               versionNumber: (selectedVaultDoc.versions?.length || 0) + 1,
                                               content: selectedVaultDoc.content,
                                               editedAt: new Date().toISOString(),
-                                              editedBy: "akinisaacade@gmail.com",
+                                              editedBy: currentUser?.email || "guest@alllegalmatters.com",
                                               changeSummary: "Before Auto-Redline Fix Integration",
                                               riskScore: selectedVaultDoc.riskScore
                                             }]
@@ -4539,7 +4547,7 @@ This power is durable and persists through any subsequent incapacity.`;
                                     <span className="text-white font-extrabold">Active Checking Standard</span>
                                   </div>
                                   <p className="text-[10px] text-slate-400 font-mono">
-                                    Author: akinisaacade@gmail.com · Last saved: {new Date(selectedVaultDoc.uploadedAt).toLocaleString()}
+                                    Author: {selectedVaultDoc.uploadedBy || currentUser?.email || "guest@alllegalmatters.com"} · Last saved: {new Date(selectedVaultDoc.uploadedAt).toLocaleString()}
                                   </p>
                                   <p className="text-[11px] text-slate-300 block mt-1 italic font-sans">
                                     Changelog Note: "{selectedVaultDoc.changeSummary || "Base document metadata import"}"
@@ -4573,7 +4581,7 @@ This power is durable and persists through any subsequent incapacity.`;
                                             <span className="text-slate-200 font-bold">Revision Point Checkpoint</span>
                                             <span className="text-[9.5px] text-slate-500 font-mono">{new Date(ver.editedAt || Date.now()).toLocaleString()}</span>
                                           </div>
-                                          <p className="text-[10px] text-slate-400 font-mono">Auditor: {ver.editedBy || "akinisaacade@gmail.com"}</p>
+                                           <p className="text-[10px] text-slate-400 font-mono">Auditor: {ver.editedBy || currentUser?.email || "guest@alllegalmatters.com"}</p>
                                           <p className="text-[11px] text-slate-300 italic font-sans font-medium">"{ver.changeSummary || "Auditor contract review checkpoint"}"</p>
                                           <div className="text-[9px] text-slate-500 font-mono">
                                             OCR Character Length: {ver.content?.length || 0} characters · Risk Score: {ver.riskScore}%
@@ -6642,7 +6650,7 @@ This power is durable and persists through any subsequent incapacity.`;
                         <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
                           <span className="text-slate-400 font-mono">Subscriber Email</span>
                           <p className="text-indigo-300 font-bold font-mono mt-1 select-all">
-                            {currentUser ? currentUser.email : "akinisaacade@gmail.com"}
+                            {currentUser ? currentUser.email : "guest@alllegalmatters.com"}
                           </p>
                         </div>
                         <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
@@ -7027,7 +7035,7 @@ module.exports = mongoose.model('User', userSchema);`}
             </div>
           )}
 
-          {activeTab === "admin" && (currentUser?.isAdmin || currentUser?.email === "akinisaacade@gmail.com") && (
+          {activeTab === "admin" && currentUser && (
             <div id="admin-panel" className="max-w-7xl mx-auto py-6 px-4">
               <AdminConsole currentUser={currentUser} showToast={showToast} />
             </div>

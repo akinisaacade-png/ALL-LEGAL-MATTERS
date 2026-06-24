@@ -2,28 +2,33 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    match /subscriptions/{subscriptionId} {
-      allow read, write: if true;
+    // Helper function to check email syntax for basic security verification
+    function isValidEmail(email) {
+      return email.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$');
     }
     
-    match /users/{userId} {
-      allow read, write: if true;
+    match /subscriptions/{subscriptionId} {
+      allow read, write: if subscriptionId != null && subscriptionId != '';
+    }
+    
+    match /users/{email} {
+      allow read, write: if email != null && isValidEmail(email);
     }
 
     match /documents/{documentId} {
-      allow read, write: if true;
+      allow read, write: if documentId != null && documentId != '';
     }
 
     match /bookings/{bookingId} {
-      allow read, write: if true;
+      allow read, write: if bookingId != null && bookingId != '';
     }
 
     match /jurisdictions_europe_core/{jurisdictionId} {
-      allow read, write: if true;
+      allow read, write: if jurisdictionId != null && jurisdictionId != '';
     }
 
     match /Europe_subnational/{subnationalId} {
-      allow read, write: if true;
+      allow read, write: if subnationalId != null && subnationalId != '';
     }
   }
 }
