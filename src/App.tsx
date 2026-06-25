@@ -418,6 +418,12 @@ export default function App() {
 
   // Subscription Sandbox Override Tier (Sovereign Simulator)
   const [simulatedTier, setSimulatedTier] = useState<"real" | "trial" | "monthly" | "yearly" | "expired">("real");
+  const [simulatedTrialDays, setSimulatedTrialDays] = useState<number>(7.0);
+  const [simulatedRenewalDays, setSimulatedRenewalDays] = useState<number>(10.0);
+  const [show48hTrialEmailModal, setShow48hTrialEmailModal] = useState<boolean>(false);
+  const [show3dRenewalEmailModal, setShow3dRenewalEmailModal] = useState<boolean>(false);
+  const [lastTriggeredTrialEmail, setLastTriggeredTrialEmail] = useState<string | null>(null);
+  const [lastTriggeredRenewalEmail, setLastTriggeredRenewalEmail] = useState<string | null>(null);
   const [billingSubTab, setBillingSubTab] = useState<"terminal" | "schema">("terminal");
 
   // Digital Marketing CRM Custom UI States
@@ -467,8 +473,8 @@ export default function App() {
   const effectiveTrialStatus = React.useMemo(() => {
     if (simulatedTier === "trial") {
       return {
-        isTrialActive: true,
-        daysRemaining: 7.0,
+        isTrialActive: simulatedTrialDays > 0,
+        daysRemaining: simulatedTrialDays,
         daysTotal: 7
       };
     }
@@ -480,7 +486,7 @@ export default function App() {
       };
     }
     return trialStatus;
-  }, [simulatedTier, trialStatus]);
+  }, [simulatedTier, trialStatus, simulatedTrialDays]);
 
   const isPremiumOrTrialActive = effectiveSubscription?.status === "active" || effectiveTrialStatus.isTrialActive;
 
@@ -601,6 +607,51 @@ export default function App() {
       }
     }
   }, [subLoaded, trialLoaded, isPremiumOrTrialActive, currentUser, effectiveTrialStatus.isTrialActive]);
+
+  // Reset logs and triggers if trial days or renewal days are increased
+  useEffect(() => {
+    if (effectiveTrialStatus.daysRemaining > 2.0) {
+      setLastTriggeredTrialEmail(null);
+    }
+  }, [effectiveTrialStatus.daysRemaining]);
+
+  useEffect(() => {
+    if (simulatedRenewalDays > 3.0) {
+      setLastTriggeredRenewalEmail(null);
+    }
+  }, [simulatedRenewalDays]);
+
+  // Simulated Email Notification triggers
+  useEffect(() => {
+    if (effectiveTrialStatus.isTrialActive && effectiveTrialStatus.daysRemaining <= 2.0 && !lastTriggeredTrialEmail) {
+      const timestamp = new Date().toLocaleString();
+      setLastTriggeredTrialEmail(timestamp);
+      // Log event
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        event: `📧 Simulated Outgoing Email: 48h Trial Expiration Reminder dispatched to ${currentUser?.email || "guest@alllegalmatters.com"}`,
+        status: "SUCCESS"
+      };
+      setSystemLogs(prev => [logEntry, ...prev]);
+      showToast("📬 Simulated 48h Trial Expiration Email fired!");
+    }
+  }, [effectiveTrialStatus.daysRemaining, effectiveTrialStatus.isTrialActive, lastTriggeredTrialEmail, currentUser]);
+
+  useEffect(() => {
+    const isSubActive = effectiveSubscription?.status === "active";
+    if (isSubActive && simulatedRenewalDays <= 3.0 && !lastTriggeredRenewalEmail) {
+      const timestamp = new Date().toLocaleString();
+      setLastTriggeredRenewalEmail(timestamp);
+      // Log event
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        event: `📧 Simulated Outgoing Email: 3-day Subscription Renewal Invoice Alert dispatched to ${currentUser?.email || "guest@alllegalmatters.com"}`,
+        status: "SUCCESS"
+      };
+      setSystemLogs(prev => [logEntry, ...prev]);
+      showToast("📬 Simulated 3-day Pre-Renewal Notice Email fired!");
+    }
+  }, [simulatedRenewalDays, effectiveSubscription?.status, lastTriggeredRenewalEmail, currentUser]);
 
   const checkPremiumFeatureAccess = (): boolean => {
     if (isPremiumOrTrialActive) return true;
@@ -1868,6 +1919,32 @@ This power is durable and persists through any subsequent incapacity.`;
               </div>
             )}
 
+            {/* Visual 7-day countdown timer for users on a trial */}
+            {(!effectiveSubscription || effectiveSubscription.status !== "active") && effectiveTrialStatus.isTrialActive && (
+              <div 
+                id="header-trial-countdown" 
+                onClick={() => {
+                  setActiveTab("billing");
+                  showToast("🎯 Checking Trial Expiration countdown and options.");
+                }}
+                className="flex items-center gap-2 bg-indigo-950/70 hover:bg-indigo-900/80 border border-indigo-500/35 px-3 py-1.5 rounded-lg text-xs cursor-pointer select-none transition-all shadow-[0_0_12px_rgba(99,102,241,0.25)] group relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-indigo-400/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+                <Clock className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: "12s" }} />
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-mono font-bold leading-none uppercase">Trial Countdown:</span>
+                    <span className="bg-amber-400 text-slate-950 font-black px-1 py-0.2 rounded text-[8.5px] uppercase tracking-wider leading-none">
+                      7d Limit
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-indigo-200 font-black font-mono tracking-tight mt-0.5">
+                    {Math.floor(effectiveTrialStatus.daysRemaining)}d {Math.floor((effectiveTrialStatus.daysRemaining % 1) * 24)}h {Math.floor(((effectiveTrialStatus.daysRemaining % 1) * 24 % 1) * 60)}m left
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Prominent Subscription Access Button */}
             <button
               id="btn-header-subscribe-plans"
@@ -1977,6 +2054,44 @@ This power is durable and persists through any subsequent incapacity.`;
               >
                 Expired
               </button>
+              
+              {simulatedTier === "trial" && (
+                <div className="flex items-center gap-1.5 ml-2 border-l border-slate-800 pl-2 animate-fadeIn">
+                  <span className="text-[9px] text-indigo-400 font-mono font-bold">DAYS LEFT:</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="7"
+                    step="0.1"
+                    value={simulatedTrialDays}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setSimulatedTrialDays(val);
+                    }}
+                    className="w-16 h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-indigo-500"
+                  />
+                  <span className="text-[10px] text-indigo-300 font-mono font-black w-7 text-right">{simulatedTrialDays.toFixed(1)}d</span>
+                </div>
+              )}
+
+              {(simulatedTier === "monthly" || simulatedTier === "yearly") && (
+                <div className="flex items-center gap-1.5 ml-2 border-l border-slate-800 pl-2 animate-fadeIn">
+                  <span className="text-[9px] text-emerald-400 font-mono font-bold">RENEW IN:</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="30"
+                    step="0.5"
+                    value={simulatedRenewalDays}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setSimulatedRenewalDays(val);
+                    }}
+                    className="w-16 h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                  />
+                  <span className="text-[10px] text-emerald-300 font-mono font-black w-7 text-right">{simulatedRenewalDays.toFixed(1)}d</span>
+                </div>
+              )}
             </div>
           </div>
           
@@ -1987,10 +2102,17 @@ This power is durable and persists through any subsequent incapacity.`;
                 Authorized: {effectiveSubscription.planType === "yearly" ? "Annual Elite License" : "Monthly Pro Plan"}
               </span>
             ) : effectiveTrialStatus.isTrialActive ? (
-              <span className="flex items-center gap-1.5 text-indigo-300 font-semibold bg-indigo-950/40 border border-indigo-500/20 px-3 py-1 rounded-md text-[10px] tracking-wide">
-                <Sparkles className="w-3 h-3 text-amber-300 animate-spin" style={{ animationDuration: "5s" }} />
-                Trial Remaining: <strong className="text-white">{Math.ceil(effectiveTrialStatus.daysRemaining)} Days</strong>
-              </span>
+              <div className="flex items-center gap-2">
+                {effectiveTrialStatus.daysRemaining <= 3.0 && (
+                  <span className="flex items-center gap-1 text-amber-400 bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded text-[9.5px] uppercase font-bold animate-pulse">
+                    ⚠️ Trial Expiring Soon
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5 text-indigo-300 font-semibold bg-indigo-950/40 border border-indigo-500/20 px-3 py-1 rounded-md text-[10px] tracking-wide">
+                  <Sparkles className="w-3 h-3 text-amber-300 animate-spin" style={{ animationDuration: "5s" }} />
+                  Trial Remaining: <strong className="text-white">{Math.ceil(effectiveTrialStatus.daysRemaining)} Days</strong>
+                </span>
+              </div>
             ) : (
               <span className="flex items-center gap-1.5 text-rose-400 font-extrabold bg-rose-950/40 border border-rose-500/20 px-3 py-1 rounded-md text-[10px] uppercase tracking-wider animate-pulse font-mono">
                 ⚠️ Trial Expired (AI Access Suspended)
@@ -2183,6 +2305,43 @@ This power is durable and persists through any subsequent incapacity.`;
 
         {/* Dynamic Panels */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+          
+          {/* Persistent Subscription Expiring Banner */}
+          {(!effectiveSubscription || effectiveSubscription.status !== "active") && 
+           effectiveTrialStatus.isTrialActive && 
+           effectiveTrialStatus.daysRemaining <= 2.0 && 
+           activeTab !== "billing" && (
+            <div id="subscription-expiring-banner" className="mb-6 bg-gradient-to-r from-red-600 via-amber-600 to-red-600 p-4 rounded-xl border border-red-500/40 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 animate-pulse relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-400"></div>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-slate-950/55 rounded-lg text-amber-400 border border-amber-500/30">
+                  <AlertTriangle className="w-5 h-5 animate-bounce" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white tracking-tight flex items-center gap-2">
+                    Urgent Reminder: Your All Legal Matters Free Trial is Expiring!
+                    <span className="bg-rose-950 text-rose-300 border border-rose-500/30 text-[9px] font-mono px-2 py-0.5 rounded-full font-black uppercase">
+                      Expires in {(effectiveTrialStatus.daysRemaining * 24).toFixed(0)} Hours
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-200 mt-1">
+                    Your 7-day free trial will expire in <strong className="text-white">{effectiveTrialStatus.daysRemaining.toFixed(1)} days</strong>. Protect your data and maintain uninterrupted access to AI Co-Counsel, real-time compliance checks, and legal templates by subscribing today.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("billing");
+                  showToast("🎯 Opening Membership Plans page.");
+                }}
+                className="bg-white hover:bg-slate-100 text-slate-950 font-black px-4 py-2.5 rounded-lg text-xs transition-all hover:scale-105 active:scale-95 shadow-lg flex items-center gap-2 font-sans uppercase tracking-wider shrink-0"
+              >
+                <CreditCard className="w-3.5 h-3.5 text-slate-950" />
+                Subscribe Now
+              </button>
+            </div>
+          )}
           
           {/* 1. Sovereign Jurisdictions Deep-dive Directory */}
           {activeTab === "directory" && (
@@ -6581,6 +6740,256 @@ This power is durable and persists through any subsequent incapacity.`;
                 </div>
               </div>
 
+              {/* --- INTERACTIVE SUBSCRIPTION & TRIAL STATUS DASHBOARD --- */}
+              <div id="trial-subscription-dashboard" className="bg-slate-950 border border-slate-850 rounded-xl p-5 md:p-6 space-y-6 relative overflow-hidden shadow-xl">
+                <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
+                
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-850 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 rounded-lg">
+                      <Sliders className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-white uppercase tracking-wider font-mono">
+                        Active Access & Notification Dispatch Center
+                      </h3>
+                      <p className="text-[11px] text-slate-400 font-sans">
+                        Real-time tracking of sandbox credentials, free trials, and simulated automated client outbox.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <span className="text-[10px] bg-slate-900 border border-slate-800 text-amber-300 font-mono font-bold px-2 py-1 rounded">
+                    SANDBOX ACTIVE
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* LEFT COLUMN: ACTIVE VISUAL STATUS (Trial Countdown or Active Plan Info) */}
+                  <div className="bg-slate-905 p-4 rounded-xl border border-slate-850 flex flex-col justify-between space-y-4">
+                    {effectiveTrialStatus.isTrialActive ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4 text-amber-300" /> Free Trial Allocation
+                          </span>
+                          <span className="text-[10px] bg-indigo-950 text-indigo-300 font-mono font-bold px-2 py-0.5 rounded border border-indigo-800/35">
+                            7-DAY PASS
+                          </span>
+                        </div>
+
+                        {/* Visual Progress Bar */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs font-mono">
+                            <span className="text-slate-400">Time Elapsed:</span>
+                            <span className="text-white font-bold">
+                              {(7 - effectiveTrialStatus.daysRemaining).toFixed(1)} / 7 Days ({( ( (7 - effectiveTrialStatus.daysRemaining) / 7 ) * 100 ).toFixed(0)}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-950 rounded-full h-3.5 border border-slate-850 p-0.5 overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                effectiveTrialStatus.daysRemaining <= 2.0 
+                                  ? "bg-gradient-to-r from-red-600 to-amber-500 animate-pulse" 
+                                  : "bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600"
+                              }`}
+                              style={{ width: `${Math.max(2, Math.min(100, ( (7 - effectiveTrialStatus.daysRemaining) / 7 ) * 100))}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                            <span>0 Days (Start)</span>
+                            <span>7 Days (Expiration)</span>
+                          </div>
+                        </div>
+
+                        {/* Visual Countdown Timer */}
+                        <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-850 space-y-2">
+                          <span className="text-[10px] text-slate-400 font-mono uppercase block">Real-time Countdown Tracker:</span>
+                          <div className="grid grid-cols-4 gap-2 text-center">
+                            <div className="bg-slate-900/80 p-2 rounded border border-slate-850">
+                              <p className="text-lg font-black text-white font-mono">{Math.floor(effectiveTrialStatus.daysRemaining)}</p>
+                              <span className="text-[9px] text-slate-500 uppercase font-mono font-semibold">Days</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-2 rounded border border-slate-850">
+                              <p className="text-lg font-black text-indigo-300 font-mono">{Math.floor((effectiveTrialStatus.daysRemaining % 1) * 24)}</p>
+                              <span className="text-[9px] text-slate-500 uppercase font-mono font-semibold">Hours</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-2 rounded border border-slate-850">
+                              <p className="text-lg font-black text-indigo-300 font-mono">{Math.floor(((effectiveTrialStatus.daysRemaining % 1) * 24 % 1) * 60)}</p>
+                              <span className="text-[9px] text-slate-500 uppercase font-mono font-semibold">Mins</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-2 rounded border border-slate-850">
+                              <p className="text-lg font-black text-amber-400 font-mono animate-pulse">{Math.floor((((effectiveTrialStatus.daysRemaining % 1) * 24 % 1) * 60 % 1) * 60)}</p>
+                              <span className="text-[9px] text-slate-500 uppercase font-mono font-semibold">Secs</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : effectiveSubscription?.status === "active" ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                            <Award className="w-4 h-4 text-yellow-300 animate-bounce" /> Active Pro Subscription
+                          </span>
+                          <span className="text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded border border-emerald-800/35">
+                            {effectiveSubscription.planType === "yearly" ? "ANNUAL UNLIMITED" : "MONTHLY PROFESSIONAL"}
+                          </span>
+                        </div>
+
+                        {/* Subscription Renewal Progress */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs font-mono">
+                            <span className="text-slate-400">Next Renewal Invoice In:</span>
+                            <span className="text-emerald-400 font-bold">
+                              {simulatedRenewalDays.toFixed(1)} Days
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-950 rounded-full h-3.5 border border-slate-850 p-0.5 overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                simulatedRenewalDays <= 3.0 
+                                  ? "bg-gradient-to-r from-red-500 to-amber-500 animate-pulse" 
+                                  : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                              }`}
+                              style={{ width: `${Math.max(2, Math.min(100, (simulatedRenewalDays / 30) * 100))}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                            <span>Auto-charging</span>
+                            <span>Cycle Renewal (30d)</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-850 flex items-center gap-3">
+                          <div className="p-2 bg-emerald-500/10 border border-emerald-500/25 rounded-md text-emerald-400">
+                            <CheckCircle className="w-4 h-4" />
+                          </div>
+                          <div className="text-xs">
+                            <p className="text-white font-bold">All premium features fully authorized.</p>
+                            <p className="text-slate-400 text-[10px] mt-0.5">Next upcoming charge scheduled: <strong className="text-slate-300 font-mono">$39.00</strong> in {simulatedRenewalDays.toFixed(0)} days.</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4 py-6 text-center">
+                        <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto animate-bounce" />
+                        <div className="space-y-1">
+                          <h4 className="text-white font-bold text-sm uppercase font-mono">No Active Access Tier</h4>
+                          <p className="text-slate-400 text-xs px-4">Your 7-day free trial has expired. You must select and process a premium plan below to unlock the counsel workstation.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* RIGHT COLUMN: AUTOMATED EMAIL SYSTEMS (SIMULATED REMINDERS) */}
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono block">
+                      ✉️ Simulated Outbox & Automation Triggers
+                    </span>
+
+                    {/* Email 1: 48h Trial Expiration Alert */}
+                    <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-850 hover:border-slate-800 transition-all space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                            48-Hour Trial Expiration Notice
+                          </h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Alerts user before the 7-day trial ceases access.</p>
+                        </div>
+                        {lastTriggeredTrialEmail ? (
+                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 animate-fadeIn">
+                            DISPATCHED
+                          </span>
+                        ) : (
+                          <span className="bg-slate-950 text-slate-500 border border-slate-850 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
+                            PENDING (≤ 2d)
+                          </span>
+                        )}
+                      </div>
+
+                      {lastTriggeredTrialEmail && (
+                        <p className="text-[9.5px] font-mono text-emerald-500 bg-emerald-950/20 px-2 py-1 rounded border border-emerald-950">
+                          Dispatched: {lastTriggeredTrialEmail}
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShow48hTrialEmailModal(true)}
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10.5px] py-1.5 px-3 rounded transition-all flex items-center justify-center gap-1 font-sans uppercase tracking-wider"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Preview Email
+                        </button>
+                        {effectiveTrialStatus.isTrialActive && effectiveTrialStatus.daysRemaining > 2.0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimulatedTrialDays(1.8);
+                              showToast("⚡ Fast-forwarded trial to 1.8 Days to trigger email.");
+                            }}
+                            className="bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 font-medium text-[10px] py-1.5 px-2.5 rounded transition-all font-mono"
+                          >
+                            Fast-forward
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Email 2: 3-Day renewal notice */}
+                    <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-850 hover:border-slate-800 transition-all space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                            3-Day Pre-Renewal Charge Notice
+                          </h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Informs subscribers about the upcoming subscription billing cycle charge.</p>
+                        </div>
+                        {lastTriggeredRenewalEmail ? (
+                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 animate-fadeIn">
+                            DISPATCHED
+                          </span>
+                        ) : (
+                          <span className="bg-slate-950 text-slate-500 border border-slate-850 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
+                            PENDING (≤ 3d)
+                          </span>
+                        )}
+                      </div>
+
+                      {lastTriggeredRenewalEmail && (
+                        <p className="text-[9.5px] font-mono text-emerald-500 bg-emerald-950/20 px-2 py-1 rounded border border-emerald-950">
+                          Dispatched: {lastTriggeredRenewalEmail}
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShow3dRenewalEmailModal(true)}
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10.5px] py-1.5 px-3 rounded transition-all flex items-center justify-center gap-1 font-sans uppercase tracking-wider"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Preview Email
+                        </button>
+                        {effectiveSubscription?.status === "active" && simulatedRenewalDays > 3.0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimulatedRenewalDays(2.5);
+                              showToast("⚡ Fast-forwarded billing remaining time to 2.5 Days to trigger email.");
+                            }}
+                            className="bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 font-medium text-[10px] py-1.5 px-2.5 rounded transition-all font-mono"
+                          >
+                            Fast-forward
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
               {/* Sub-tab Navigation */}
               <div className="flex border-b border-slate-850 gap-1 pt-1">
                 <button
@@ -6612,7 +7021,8 @@ This power is durable and persists through any subsequent incapacity.`;
               </div>
 
               {billingSubTab === "terminal" ? (
-                effectiveSubscription?.status === "active" ? (
+                <div className="space-y-6">
+                  {effectiveSubscription?.status === "active" ? (
                   /* --- ACTIVE PREMIUM VIEW --- */
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fadeIn">
                     {/* Glowing Active Membership Card */}
@@ -6850,8 +7260,120 @@ This power is durable and persists through any subsequent incapacity.`;
                       </div>
                     </div>
                   </div>
-                )
-              ) : (
+                )}
+
+                {/* Subscription and Free Trial Policy Card */}
+                <div id="subscription-free-trial-policy-card" className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-6 md:p-8 rounded-xl border border-indigo-500/20 shadow-xl space-y-6 relative overflow-hidden animate-fadeIn">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-purple-600"></div>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 text-indigo-400">
+                      <Scale className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+                        Subscription and Free Trial Policy
+                        <span className="bg-indigo-500/15 text-indigo-400 text-[10px] font-mono px-2 py-0.5 rounded-full border border-indigo-500/20 uppercase tracking-wider font-extrabold">
+                          OFFICIAL POLICY
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5 font-sans">
+                        Governing user onboarding, trial calculations, payment systems, and access provisions.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 text-xs text-slate-300 leading-relaxed font-sans">
+                    <p>
+                      The AI-Powered <strong className="text-white font-semibold">ALL LEGAL MATTERS</strong> platform shall provide every new user with a <span className="text-indigo-300 font-semibold underline decoration-indigo-500/40 underline-offset-4">7-Day Free Trial</span> granting full access to the application's features and services.
+                    </p>
+                    <p>
+                      Upon expiration of the 7-day trial period, the system must automatically restrict further access and redirect the user to the Subscription & Billing page. Users will be required to select and complete payment for one of the available subscription plans before regaining access to the platform:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-2 py-1">
+                      <div className="bg-slate-900/60 border border-slate-800/80 p-3 rounded-lg flex items-center gap-3">
+                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+                        <div>
+                          <p className="text-white font-bold text-xs">Monthly Subscription Plan</p>
+                          <p className="text-[10px] text-slate-500 font-mono">Recurring $39/month access tier</p>
+                        </div>
+                      </div>
+                      <div className="bg-slate-900/60 border border-slate-800/80 p-3 rounded-lg flex items-center gap-3">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                        <div>
+                          <p className="text-white font-bold text-xs">Annual (Yearly) Subscription Plan</p>
+                          <p className="text-[10px] text-slate-500 font-mono">Recurring $349/year premium tier</p>
+                        </div>
+                      </div>
+                    </div>
+                    <p>
+                      Access to the application shall remain suspended until a valid subscription payment has been successfully processed. Once payment is confirmed, the user will immediately regain access to all authorized features based on the selected subscription plan.
+                    </p>
+                  </div>
+
+                  {/* Operational Requirements Section */}
+                  <div className="border-t border-slate-850 pt-5 space-y-4">
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                      <CheckCircle className="w-4 h-4 text-emerald-400" /> Operational System Directives
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3.5">
+                      <div className="bg-slate-950/40 border border-slate-850 p-3.5 rounded-lg space-y-2 hover:border-slate-700 transition-all">
+                        <div className="flex items-center justify-between">
+                          <span className="bg-indigo-500/10 text-indigo-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded">01</span>
+                          <span className="text-[10px] font-mono text-slate-600 font-bold uppercase">TRACKING</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-snug">
+                          <strong>Trial Management:</strong> Automatically track and manage the free trial period.
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950/40 border border-slate-850 p-3.5 rounded-lg space-y-2 hover:border-slate-700 transition-all">
+                        <div className="flex items-center justify-between">
+                          <span className="bg-indigo-500/10 text-indigo-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded">02</span>
+                          <span className="text-[10px] font-mono text-slate-600 font-bold uppercase">WARNINGS</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-snug">
+                          <strong>Advance Notifications:</strong> Display advance notifications before the trial expires.
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950/40 border border-slate-850 p-3.5 rounded-lg space-y-2 hover:border-slate-700 transition-all">
+                        <div className="flex items-center justify-between">
+                          <span className="bg-indigo-500/10 text-indigo-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded">03</span>
+                          <span className="text-[10px] font-mono text-slate-600 font-bold uppercase">REDIRECT</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-snug">
+                          <strong>Auto-Redirect:</strong> Redirect users to the subscription payment page immediately upon trial expiration.
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950/40 border border-slate-850 p-3.5 rounded-lg space-y-2 hover:border-slate-700 transition-all">
+                        <div className="flex items-center justify-between">
+                          <span className="bg-indigo-500/10 text-indigo-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded">04</span>
+                          <span className="text-[10px] font-mono text-slate-600 font-bold uppercase">SUSPENSION</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-snug">
+                          <strong>Restrict Premium:</strong> Prevent access to premium features until an active subscription is purchased.
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950/40 border border-slate-850 p-3.5 rounded-lg space-y-2 hover:border-slate-700 transition-all">
+                        <div className="flex items-center justify-between">
+                          <span className="bg-indigo-500/10 text-indigo-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded">05</span>
+                          <span className="text-[10px] font-mono text-slate-600 font-bold uppercase">RENEWAL</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-snug">
+                          <strong>Auto-Renewal:</strong> Automatically renew access according to the user's selected monthly or annual billing cycle, subject to successful payment processing.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 border-t border-slate-850 pt-4 leading-relaxed font-sans italic">
+                    This subscription model ensures that all users can evaluate the platform during the free trial period and then seamlessly transition to a paid plan for continued access to the AI-Powered ALL LEGAL MATTERS ecosystem.
+                  </p>
+                </div>
+              </div>
+            ) : (
                 /* --- SCHEMA SPECIFICATION VIEW --- */
                 <div className="space-y-6 animate-fadeIn">
                   <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl relative overflow-hidden space-y-4">
@@ -7055,6 +7577,208 @@ module.exports = mongoose.model('User', userSchema);`}
             <span className="text-amber-400 border-l border-slate-800 pl-2">V1.4.2 PROD REEL</span>
           </div>
         </footer>
+
+        {/* Mock Email Modal: 48h Trial Expiration */}
+        {show48hTrialEmailModal && (
+          <div className="fixed inset-0 bg-slate-950/85 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-slate-900 border border-indigo-500/30 rounded-xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+              {/* Window header */}
+              <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-indigo-400">EMAIL CLIENT OUTBOX PREVIEW</span>
+                <button 
+                  onClick={() => setShow48hTrialEmailModal(false)}
+                  className="text-slate-400 hover:text-white text-xs font-black px-2 py-1 bg-slate-900 rounded border border-slate-850"
+                >
+                  CLOSE [ESC]
+                </button>
+              </div>
+              
+              {/* Email headers */}
+              <div className="p-4 bg-slate-950/50 border-b border-slate-850 text-xs space-y-2">
+                <div className="flex gap-2 text-slate-400">
+                  <span className="font-mono w-16">FROM:</span>
+                  <strong className="text-slate-200">billing@alllegalmatters-intelligence.com (All Legal Matters Automated Outbox)</strong>
+                </div>
+                <div className="flex gap-2 text-slate-400">
+                  <span className="font-mono w-16">TO:</span>
+                  <strong className="text-indigo-300">{currentUser?.email || "guest@alllegalmatters.com"}</strong>
+                </div>
+                <div className="flex gap-2 text-slate-400">
+                  <span className="font-mono w-16">SUBJECT:</span>
+                  <strong className="text-amber-400 font-bold">⚠️ Urgent Action Required: Your 7-Day All Legal Matters Free Trial is Expiring!</strong>
+                </div>
+              </div>
+
+              {/* Email body (rendered like a real modern newsletter) */}
+              <div className="p-6 overflow-y-auto space-y-6 bg-slate-900 font-sans text-xs text-slate-300 leading-relaxed">
+                <div className="text-center py-4 border-b border-slate-800 space-y-2">
+                  <div className="w-12 h-12 bg-indigo-600/10 border border-indigo-500 text-indigo-400 rounded-full flex items-center justify-center mx-auto text-lg font-black font-mono">
+                    AL
+                  </div>
+                  <h1 className="text-lg font-bold text-white tracking-tight">Sovereign Transnational Judicial Counsel</h1>
+                  <p className="text-[10px] uppercase font-mono text-indigo-400 tracking-widest">Digital Service Outbox Reminder</p>
+                </div>
+
+                <p>Dear Valued Judicial Operator,</p>
+                
+                <p>
+                  We hope you are finding our AI-powered legal compliance engines, automated document generators, and sovereign juris-consultants useful for your enterprise legal workflows.
+                </p>
+
+                <div className="bg-red-950/30 border border-red-500/20 p-4 rounded-lg space-y-2">
+                  <h3 className="font-bold text-red-400 flex items-center gap-1.5">
+                    ⚠️ UPCOMING SERVICE INTERRUPTION WARNING
+                  </h3>
+                  <p className="text-[11.5px] leading-relaxed">
+                    Your 7-day trial period is reaching its designated duration limit. In exactly <strong className="text-white">48 hours</strong>, access to your active legal workspace, Co-Counsel conversational pipelines, translation logs, and stored compliance assets will be suspended.
+                  </p>
+                </div>
+
+                <p>
+                  To secure persistent access to all digital intelligence agents and prevent any workflow delays, you are invited to select one of our professional access licenses:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1">
+                  <div className="bg-slate-950 p-4 rounded border border-slate-850 space-y-2">
+                    <h4 className="text-white font-bold">Counsel Pro Monthly</h4>
+                    <p className="text-[11px] text-slate-400">Billed monthly recurring. Full AI and compliance suite.</p>
+                    <p className="text-indigo-400 font-mono font-bold">$39.00 / Month</p>
+                  </div>
+                  <div className="bg-slate-950 p-4 rounded border border-slate-850 space-y-2">
+                    <h4 className="text-white font-bold">Counsel Pro Annual</h4>
+                    <p className="text-[11px] text-slate-400">Save 25% with annual billing. Priority processing.</p>
+                    <p className="text-amber-400 font-mono font-bold">$349.00 / Year</p>
+                  </div>
+                </div>
+
+                <p>
+                  Clicking the button below will immediately open the billing interface where you can securely process payments via Stripe.
+                </p>
+
+                <div className="text-center py-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShow48hTrialEmailModal(false);
+                      setActiveTab("billing");
+                      showToast("🎯 Subscriptions console active.");
+                    }}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-widest px-8 py-3 rounded-lg shadow-lg hover:scale-105 transition-all font-sans"
+                  >
+                    Process Pro Subscription License
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-800 pt-4 text-[10px] text-slate-500 text-center space-y-1">
+                  <p>All Legal Matters LLC, 1600 Amphitheatre Pkwy, Mountain View, CA 94043</p>
+                  <p>You received this automated transactional notification because your account is registered under a trial pass.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Mock Email Modal: 3d Subscription Renewal */}
+        {show3dRenewalEmailModal && (
+          <div className="fixed inset-0 bg-slate-950/85 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-slate-900 border border-emerald-500/30 rounded-xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+              {/* Window header */}
+              <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-emerald-400">EMAIL CLIENT OUTBOX PREVIEW</span>
+                <button 
+                  onClick={() => setShow3dRenewalEmailModal(false)}
+                  className="text-slate-400 hover:text-white text-xs font-black px-2 py-1 bg-slate-900 rounded border border-slate-850"
+                >
+                  CLOSE [ESC]
+                </button>
+              </div>
+              
+              {/* Email headers */}
+              <div className="p-4 bg-slate-950/50 border-b border-slate-850 text-xs space-y-2">
+                <div className="flex gap-2 text-slate-400">
+                  <span className="font-mono w-16">FROM:</span>
+                  <strong className="text-slate-200">billing@alllegalmatters-intelligence.com (All Legal Matters Automated Outbox)</strong>
+                </div>
+                <div className="flex gap-2 text-slate-400">
+                  <span className="font-mono w-16">TO:</span>
+                  <strong className="text-indigo-300">{currentUser?.email || "guest@alllegalmatters.com"}</strong>
+                </div>
+                <div className="flex gap-2 text-slate-400">
+                  <span className="font-mono w-16">SUBJECT:</span>
+                  <strong className="text-emerald-400 font-bold">💳 Upcoming Renewal Notice: Your All Legal Matters Subscription Billed Soon</strong>
+                </div>
+              </div>
+
+              {/* Email body (rendered like a real modern newsletter) */}
+              <div className="p-6 overflow-y-auto space-y-6 bg-slate-900 font-sans text-xs text-slate-300 leading-relaxed">
+                <div className="text-center py-4 border-b border-slate-800 space-y-2">
+                  <div className="w-12 h-12 bg-emerald-600/10 border border-emerald-500 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-lg font-black font-mono">
+                    AL
+                  </div>
+                  <h1 className="text-lg font-bold text-white tracking-tight">Sovereign Transnational Judicial Counsel</h1>
+                  <p className="text-[10px] uppercase font-mono text-emerald-400 tracking-widest">Digital Service Outbox Reminder</p>
+                </div>
+
+                <p>Dear Valued Subscriber,</p>
+                
+                <p>
+                  We thank you for your ongoing partnership with All Legal Matters! This is a brief pre-billing transaction notice to let you know that your subscription plan is scheduled to automatically renew.
+                </p>
+
+                <div className="bg-emerald-950/30 border border-emerald-500/20 p-4 rounded-lg space-y-2">
+                  <h3 className="font-bold text-emerald-400 flex items-center gap-1.5">
+                    💳 AUTOMATED ACCOUNT RE-CHARGE PRE-NOTICE
+                  </h3>
+                  <p className="text-[11.5px] leading-relaxed">
+                    In exactly <strong className="text-white">3 days</strong>, your linked credit card or payment instrument will be processed for renewal. This charge keeps your workspace continuous, SOC-2 compliance audits active, and OCR processing active.
+                  </p>
+                </div>
+
+                <div className="bg-slate-950 rounded-lg p-4 border border-slate-850 space-y-2 text-xs">
+                  <div className="flex justify-between border-b border-slate-850 pb-2">
+                    <span className="text-slate-400">Billing Account:</span>
+                    <strong className="text-white font-mono">{currentUser?.email || "guest@alllegalmatters.com"}</strong>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-850 pb-2">
+                    <span className="text-slate-400">Plan Tier:</span>
+                    <strong className="text-white">Sovereign Counsel Pro</strong>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-850 pb-2">
+                    <span className="text-slate-400">Scheduled Charge Date:</span>
+                    <strong className="text-white font-mono">3 Days from now</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Amount to Bill:</span>
+                    <strong className="text-emerald-400 font-bold font-mono">$39.00 USD</strong>
+                  </div>
+                </div>
+
+                <p>
+                  No manual action is required on your end to authorize this. Your subscription is configured to renew seamlessly. However, if you need to review payment options or manage your details, you can launch your account support portal anytime.
+                </p>
+
+                <div className="text-center py-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShow3dRenewalEmailModal(false);
+                      setActiveTab("billing");
+                      showToast("🎯 Subscription billing dashboard opened.");
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs uppercase tracking-widest px-8 py-3 rounded-lg shadow-lg hover:scale-105 transition-all font-sans"
+                  >
+                    Manage Subscription Profile
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-800 pt-4 text-[10px] text-slate-500 text-center space-y-1">
+                  <p>All Legal Matters LLC, 1600 Amphitheatre Pkwy, Mountain View, CA 94043</p>
+                  <p>You received this automated transactional notification because you have a premium active paid service plan.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
