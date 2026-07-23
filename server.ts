@@ -947,57 +947,78 @@ function getStripe(): Stripe {
   return stripeClient;
 }
 
-// 1. Create a Stripe Checkout Session for Subscription
+// Handler function for creating checkout session
+async function createStripeSession(planSelected: string, emailParam?: string) {
+  const planType = planSelected === "yearly" ? "yearly" : "monthly";
+  const priceId = planType === "yearly" 
+    ? (process.env.STRIPE_PRICE_ID_YEARLY || process.env.PRICE_ID_YEARLY || "price_1TfEPRBMbxh6jv0CKiwDzY4x")
+    : (process.env.STRIPE_PRICE_ID_MONTHLY || process.env.PRICE_ID_MONTHLY || "price_1TfENIBMbxh6jv0CBKolLI4B");
+
+  const domain = process.env.DOMAIN_URL || process.env.APP_URL || process.env.DOMAIN || "http://localhost:3000";
+  const cleanedDomain = domain.replace(/\/$/, "");
+
+  const stripe = getStripe();
+  const sessionParams: any = {
+    mode: "subscription",
+    payment_method_types: ["card"],
+    line_items: [
+      {
+        price: priceId,
+        quantity: 1,
+      },
+    ],
+    success_url: `${cleanedDomain}/?stripe_checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${cleanedDomain}/?stripe_checkout=cancel`,
+    metadata: {
+      planType,
+      priceId
+    }
+  };
+
+  if (emailParam) {
+    sessionParams.customer_email = emailParam;
+    sessionParams.client_reference_id = emailParam;
+    sessionParams.metadata.email = emailParam;
+  }
+
+  const session = await stripe.checkout.sessions.create(sessionParams);
+
+  database.systemLogs.push({
+    timestamp: new Date().toISOString(),
+    event: `Stripe Checkout Session Created (${planType}) ${emailParam ? 'for ' + emailParam : ''}`,
+    status: "SUCCESS"
+  });
+
+  return { sessionId: session.id, url: session.url };
+}
+
+// Endpoint 1a: Standard /create-checkout-session
+app.post("/create-checkout-session", async (req, res) => {
+  try {
+    const plan = req.body.plan || req.body.planType || "monthly";
+    const email = req.body.email;
+    const sessionData = await createStripeSession(plan, email);
+    res.json(sessionData);
+  } catch (error: any) {
+    console.error("Stripe Session Error:", error);
+    res.status(500).json({ error: error.message || "Failed to create checkout session." });
+  }
+});
+
+// Endpoint 1b: API alias /api/stripe/create-checkout-session
 app.post("/api/stripe/create-checkout-session", async (req, res) => {
   try {
-    const { planType, email } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: "Email parameter is required." });
-    }
-
-    const priceId = planType === "yearly" 
-      ? (process.env.PRICE_ID_YEARLY || "price_1TfEPRBMbxh6jv0CKiwDzY4x")
-      : (process.env.PRICE_ID_MONTHLY || "price_1TfENIBMbxh6jv0CBKolLI4B");
-
-    const domain = process.env.APP_URL || process.env.DOMAIN || "http://localhost:3000";
-    const cleanedDomain = domain.replace(/\/$/, "");
-
-    const stripe = getStripe();
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      customer_email: email,
-      client_reference_id: email,
-      success_url: `${cleanedDomain}/?stripe_checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${cleanedDomain}/?stripe_checkout=cancel`,
-      metadata: {
-        email,
-        planType,
-        priceId
-      }
-    });
-
-    const log = {
-      timestamp: new Date().toISOString(),
-      event: `Stripe Checkout Session Created for ${email} (${planType})`,
-      status: "SUCCESS"
-    };
-    database.systemLogs.push(log);
-
-    res.json({ sessionId: session.id, url: session.url });
+    const { planType, plan, email } = req.body;
+    const selectedPlan = planType || plan || "monthly";
+    const sessionData = await createStripeSession(selectedPlan, email);
+    res.json(sessionData);
   } catch (error: any) {
     console.error("Stripe Checkout Session Error:", error);
     res.status(500).json({ error: error.message || "Failed to create checkout session." });
   }
 });
 
-// 2. Retrieve Status of Checkout Session to verify payment
+// Endpoint 2: Retrieve Status of Checkout Session
 app.get("/api/stripe/session-status", async (req, res) => {
   try {
     const { session_id } = req.query;
@@ -1012,7 +1033,6 @@ app.get("/api/stripe/session-status", async (req, res) => {
     const email = session.customer_email || session.client_reference_id || "";
     if ((session.payment_status === "paid" || session.status === "complete") && email) {
       const priceId = session.metadata?.priceId || "";
-      const planType = session.metadata?.planType || "monthly";
       
       const existing = database.subscriptions.find(s => s.email === email);
       if (existing) {
@@ -1048,8 +1068,8 @@ app.get("/api/stripe/session-status", async (req, res) => {
   }
 });
 
-// 3. Optional Stripe Webhook Listener
-app.post("/api/stripe/webhook", async (req: any, res) => {
+// Endpoint 3: Webhook Endpoint (/webhook & /api/stripe/webhook)
+const handleWebhook = async (req: any, res: any) => {
   const sig = req.headers["stripe-signature"];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -1060,7 +1080,7 @@ app.post("/api/stripe/webhook", async (req: any, res) => {
 
   try {
     const stripe = getStripe();
-    const event = stripe.webhooks.constructEvent(req.rawBody, sig, webhookSecret);
+    const event = stripe.webhooks.constructEvent(req.rawBody || req.body, sig, webhookSecret);
 
     console.log(`Stripe webhooks event type received: ${event.type}`);
 
@@ -1088,8 +1108,6 @@ app.post("/api/stripe/webhook", async (req: any, res) => {
       }
     } else if (event.type === "customer.subscription.deleted" || event.type === "customer.subscription.updated") {
       const sub = event.data.object as any;
-      const customerId = sub.customer;
-      // Resolve client from Stripe customer if needed, simplified lookup via active subscriptions
       const existing = database.subscriptions.find(s => s.subscriptionId === sub.id);
       if (existing) {
         if (sub.status === "active") {
@@ -1107,10 +1125,13 @@ app.post("/api/stripe/webhook", async (req: any, res) => {
 
     res.json({ received: true });
   } catch (err: any) {
-    console.error(`Stripe Webhook verification failure: ${err.message}`);
-    res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error(`Webhook Error: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
-});
+};
+
+app.post("/webhook", express.raw({ type: "application/json" }), handleWebhook);
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), handleWebhook);
 
 // Check active subscription status directly from memory
 app.get("/api/stripe/subscription", (req, res) => {
@@ -1462,7 +1483,7 @@ const startServer = async () => {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*all", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

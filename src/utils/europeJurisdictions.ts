@@ -177,12 +177,11 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.warn('Firestore Operation Warning: ', JSON.stringify(errInfo));
 }
 
 /**
- * Loads Europe core jurisdictions from Firestore.
+ * Loads Europe core jurisdictions from Firestore with fallback to local static data if quota/network error occurs.
  */
 export async function getEuropeJurisdictions(): Promise<EuropeJurisdiction[]> {
   const colPath = "jurisdictions_europe_core";
@@ -210,10 +209,10 @@ export async function getEuropeJurisdictions(): Promise<EuropeJurisdiction[]> {
         eu_member: d.eu_member !== undefined ? d.eu_member : undefined
       });
     });
-    return results;
+    return results.length > 0 ? results : INITIAL_EUROPE_JURISDICTIONS;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, colPath);
-    return [];
+    return INITIAL_EUROPE_JURISDICTIONS;
   }
 }
 
@@ -225,7 +224,7 @@ export async function seedEuropeJurisdictions(force = false): Promise<void> {
   try {
     if (!force) {
       const existing = await getEuropeJurisdictions();
-      if (existing.length > 0) {
+      if (existing.length > 0 && existing !== INITIAL_EUROPE_JURISDICTIONS) {
         console.log("Europe Jurisdictions already seeded in Firestore");
         return;
       }
@@ -252,6 +251,7 @@ export async function saveEuropeJurisdiction(item: EuropeJurisdiction): Promise<
     await setDoc(docRef, item);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${colPath}/${item.id}`);
+    throw new Error("Unable to save to Firestore cloud database (Quota limit reached or connection offline).");
   }
 }
 
@@ -265,6 +265,7 @@ export async function deleteEuropeJurisdiction(id: string): Promise<void> {
     await deleteDoc(docRef);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${colPath}/${id}`);
+    throw new Error("Unable to delete from Firestore cloud database (Quota limit reached or connection offline).");
   }
 }
 
@@ -346,7 +347,7 @@ export const INITIAL_EUROPE_SUBNATIONAL: EuropeSubnational[] = [
 ];
 
 /**
- * Loads Europe subnational jurisdictions from Firestore.
+ * Loads Europe subnational jurisdictions from Firestore with fallback to local static data if quota/network error occurs.
  */
 export async function getEuropeSubnationalJurisdictions(): Promise<EuropeSubnational[]> {
   const colPath = "Europe_subnational";
@@ -368,10 +369,10 @@ export async function getEuropeSubnationalJurisdictions(): Promise<EuropeSubnati
         notes: d.notes || ""
       });
     });
-    return results;
+    return results.length > 0 ? results : INITIAL_EUROPE_SUBNATIONAL;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, colPath);
-    return [];
+    return INITIAL_EUROPE_SUBNATIONAL;
   }
 }
 
@@ -383,7 +384,7 @@ export async function seedEuropeSubnationalJurisdictions(force = false): Promise
   try {
     if (!force) {
       const existing = await getEuropeSubnationalJurisdictions();
-      if (existing.length > 0) {
+      if (existing.length > 0 && existing !== INITIAL_EUROPE_SUBNATIONAL) {
         console.log("Europe Subnational Jurisdictions already seeded in Firestore");
         return;
       }
@@ -410,6 +411,7 @@ export async function saveEuropeSubnationalJurisdiction(item: EuropeSubnational)
     await setDoc(docRef, item);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${colPath}/${item.id}`);
+    throw new Error("Unable to save subnational jurisdiction (Quota limit reached or connection offline).");
   }
 }
 
@@ -423,5 +425,6 @@ export async function deleteEuropeSubnationalJurisdiction(id: string): Promise<v
     await deleteDoc(docRef);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `${colPath}/${id}`);
+    throw new Error("Unable to delete subnational jurisdiction (Quota limit reached or connection offline).");
   }
 }

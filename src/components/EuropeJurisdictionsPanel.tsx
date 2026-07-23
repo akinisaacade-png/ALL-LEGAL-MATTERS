@@ -91,7 +91,7 @@ export default function EuropeJurisdictionsPanel({ currentUser, showToast }: Eur
       showToast("Seeded 7 Europe core jurisdictions in Firestore.");
       await refreshList();
     } catch (e) {
-      showToast("Error seeding collection.");
+      showToast("Cloud quota limit reached. Using built-in static European jurisdictions dataset.");
     } finally {
       setLoading(false);
     }

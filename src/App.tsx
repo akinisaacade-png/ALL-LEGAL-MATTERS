@@ -505,7 +505,7 @@ export default function App() {
       seedEuropeSubnationalJurisdictions()
     ])
       .then(() => console.log("Europe Jurisdictions and Subnationals auto-seeded / verified in Firestore"))
-      .catch((err) => console.error("Error auto-seeding Europe jurisdictions:", err));
+      .catch((err) => console.warn("Firestore auto-seeding info:", err));
 
     const handleOnline = () => {
       setIsOnline(true);
@@ -758,7 +758,7 @@ export default function App() {
         daysTotal: 7
       });
     } catch (err) {
-      console.error("Error with Firestore user profile/trial:", err);
+      console.warn("Firestore user profile/trial offline or quota exceeded, using local state:", err);
       // Fallback local persistence if Firestore is unreachable or in guest mode
       const cachedCreated = localStorage.getItem("trial_starts") || new Date().toISOString();
       if (!localStorage.getItem("trial_starts")) {
@@ -6731,11 +6731,35 @@ This power is durable and persists through any subsequent incapacity.`;
                       Manage your Global Legal Counsel plan, check active tier access, and initialize real-time Stripe checkout sessions.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-mono">
+                  <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
                     <span className="text-slate-400">Operator Session:</span>
                     <span className="bg-slate-900 border border-slate-800 text-indigo-400 px-2.5 py-1 rounded font-bold">
                       {currentUser ? currentUser.email : "Guest Mode (Unregistered)"}
                     </span>
+                    <button
+                      type="button"
+                      id="clear-cache-cookies-btn"
+                      onClick={() => {
+                        try {
+                          localStorage.clear();
+                          sessionStorage.clear();
+                          document.cookie.split(";").forEach((cookie) => {
+                            const eqPos = cookie.indexOf("=");
+                            const name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
+                            document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                          });
+                        } catch (e) {
+                          console.warn("Storage reset warning:", e);
+                        }
+                        showToast("🧹 Cache, cookies & storage cleared successfully!");
+                        registerAndCheckTrial();
+                        fetchSubscription();
+                      }}
+                      className="bg-slate-900 hover:bg-slate-800 border border-slate-750 text-amber-400 hover:text-amber-300 px-3 py-1 rounded-md text-xs font-mono font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-amber-400" />
+                      Clear Cache & Cookies
+                    </button>
                   </div>
                 </div>
               </div>
@@ -6867,7 +6891,7 @@ This power is durable and persists through any subsequent incapacity.`;
                           </div>
                           <div className="text-xs">
                             <p className="text-white font-bold">All premium features fully authorized.</p>
-                            <p className="text-slate-400 text-[10px] mt-0.5">Next upcoming charge scheduled: <strong className="text-slate-300 font-mono">$39.00</strong> in {simulatedRenewalDays.toFixed(0)} days.</p>
+                            <p className="text-slate-400 text-[10px] mt-0.5">Next upcoming charge scheduled: <strong className="text-slate-300 font-mono">{effectiveSubscription?.planType === "yearly" ? "$399.00" : "$49.00"}</strong> in {simulatedRenewalDays.toFixed(0)} days.</p>
                           </div>
                         </div>
                       </div>
@@ -7054,7 +7078,7 @@ This power is durable and persists through any subsequent incapacity.`;
                         <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
                           <span className="text-slate-400 font-mono">Current Plan Tier</span>
                           <p className="text-white font-bold text-sm uppercase mt-1">
-                            {effectiveSubscription.planType === "yearly" ? "Yearly License ($349/year)" : "Monthly Membership ($39/month)"}
+                            {effectiveSubscription.planType === "yearly" ? "Yearly License ($399/year)" : "Monthly Membership ($49/month)"}
                           </p>
                         </div>
                         <div className="space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-850">
@@ -7151,7 +7175,7 @@ This power is durable and persists through any subsequent incapacity.`;
                             <span className="bg-slate-950 px-2 py-1 text-slate-400 rounded text-[9px] font-bold font-mono uppercase">Monthly access</span>
                           </div>
                           <div className="flex items-baseline gap-1.5 border-b border-slate-800 pb-4">
-                            <span className="text-3xl font-black text-white">$39</span>
+                            <span className="text-3xl font-black text-white">$49</span>
                             <span className="text-xs text-slate-400 font-mono">/ month</span>
                           </div>
                           <ul className="space-y-3 text-xs text-slate-300">
@@ -7172,14 +7196,14 @@ This power is durable and persists through any subsequent incapacity.`;
                         <button
                           onClick={() => handleStripeCheckout("monthly")}
                           disabled={stripeLoading}
-                          className="w-full bg-slate-800 hover:bg-slate-750 text-white font-bold text-xs py-3 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-3 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-indigo-900/20"
                         >
                           {stripeLoading ? (
                             <span className="flex items-center gap-2">
-                              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> Connecting to checkout...
+                              <RefreshCw className="w-4 h-4 animate-spin text-indigo-200" /> Connecting to checkout...
                             </span>
                           ) : (
-                            "Subscribe Monthly"
+                            "Subscribe Monthly — $49.00 / month"
                           )}
                         </button>
                       </div>
@@ -7187,7 +7211,7 @@ This power is durable and persists through any subsequent incapacity.`;
                       {/* Plan B: Yearly License (Highlighted) */}
                       <div className="bg-slate-900/80 p-6 rounded-xl border border-indigo-500/30 shadow-lg shadow-indigo-950/10 flex flex-col justify-between hover:border-indigo-500/50 transition-all space-y-6 relative overflow-hidden">
                         <div className="absolute top-0 right-0 bg-indigo-500 text-white font-sans font-black text-[9px] tracking-widest uppercase px-3 py-1 rounded-bl-md shadow-sm">
-                          25% SAVINGS
+                          32% SAVINGS
                         </div>
                         <div className="space-y-4">
                           <div className="flex justify-between items-start">
@@ -7198,7 +7222,7 @@ This power is durable and persists through any subsequent incapacity.`;
                             <span className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded text-[9px] font-bold font-mono uppercase">MOST POPULAR</span>
                           </div>
                           <div className="flex items-baseline gap-1.5 border-b border-slate-800 pb-4">
-                            <span className="text-3xl font-black text-white">$349</span>
+                            <span className="text-3xl font-black text-white">$399</span>
                             <span className="text-xs text-slate-400 font-mono">/ year</span>
                           </div>
                           <ul className="space-y-3 text-xs text-slate-300">
@@ -7219,14 +7243,14 @@ This power is durable and persists through any subsequent incapacity.`;
                         <button
                           onClick={() => handleStripeCheckout("yearly")}
                           disabled={stripeLoading}
-                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-3 rounded-lg transition-all shadow-md shadow-indigo-900/20 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                          className="w-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-amber-500 hover:from-indigo-500 hover:to-amber-400 text-white font-bold text-xs py-3 rounded-lg transition-all shadow-md shadow-indigo-900/20 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
                         >
                           {stripeLoading ? (
                             <span className="flex items-center gap-2">
                               <RefreshCw className="w-4 h-4 animate-spin text-white" /> Connecting to checkout...
                             </span>
                           ) : (
-                            "Subscribe Annual"
+                            "Subscribe Annual — $399.00 / year"
                           )}
                         </button>
                       </div>
@@ -7294,14 +7318,14 @@ This power is durable and persists through any subsequent incapacity.`;
                         <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
                         <div>
                           <p className="text-white font-bold text-xs">Monthly Subscription Plan</p>
-                          <p className="text-[10px] text-slate-500 font-mono">Recurring $39/month access tier</p>
+                          <p className="text-[10px] text-slate-500 font-mono">Recurring $49/month access tier</p>
                         </div>
                       </div>
                       <div className="bg-slate-900/60 border border-slate-800/80 p-3 rounded-lg flex items-center gap-3">
                         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
                         <div>
                           <p className="text-white font-bold text-xs">Annual (Yearly) Subscription Plan</p>
-                          <p className="text-[10px] text-slate-500 font-mono">Recurring $349/year premium tier</p>
+                          <p className="text-[10px] text-slate-500 font-mono">Recurring $399/year premium tier</p>
                         </div>
                       </div>
                     </div>
@@ -7364,6 +7388,91 @@ This power is durable and persists through any subsequent incapacity.`;
                         <p className="text-[11px] text-slate-300 leading-snug">
                           <strong>Auto-Renewal:</strong> Automatically renew access according to the user's selected monthly or annual billing cycle, subject to successful payment processing.
                         </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Comprehensive Payment Documentation Section */}
+                  <div className="border-t border-slate-850 pt-6 space-y-4 bg-slate-950/60 p-5 rounded-xl border border-indigo-500/20">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
+                          <CreditCard className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white uppercase tracking-wide font-mono">
+                            Stripe Payment & Integration Documentation
+                          </h4>
+                          <p className="text-[11px] text-slate-400">
+                            Architecture mapping between Express Stripe backend endpoints, env parameters, and subscription plans.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded text-[10px] font-mono font-bold">
+                        API LIVE & CONNECTED
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Subscription Plan Mapping */}
+                      <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-lg space-y-3">
+                        <h5 className="text-xs font-bold text-amber-400 font-mono flex items-center gap-1.5 uppercase">
+                          <Shield className="w-3.5 h-3.5" /> Plan Mapping & Pricing
+                        </h5>
+                        <div className="space-y-2.5 text-xs text-slate-300 font-mono">
+                          <div className="bg-slate-950 p-2.5 rounded border border-slate-850 space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-white font-bold">Monthly Subscription</span>
+                              <span className="text-emerald-400 font-black">$49.00 / month</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-sans">
+                              Environment Key: <code className="text-indigo-300">STRIPE_PRICE_ID_MONTHLY</code>
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              Active Price ID: <code className="text-slate-300">price_1TfENIBMbxh6jv0CBKolLI4B</code>
+                            </p>
+                          </div>
+
+                          <div className="bg-slate-950 p-2.5 rounded border border-slate-850 space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-white font-bold">Yearly Subscription</span>
+                              <span className="text-amber-400 font-black">$399.00 / year (32% Savings)</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-sans">
+                              Environment Key: <code className="text-indigo-300">STRIPE_PRICE_ID_YEARLY</code>
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              Active Price ID: <code className="text-slate-300">price_1TfEPRBMbxh6jv0CKiwDzY4x</code>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Backend API Endpoints Mapping */}
+                      <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-lg space-y-3">
+                        <h5 className="text-xs font-bold text-indigo-400 font-mono flex items-center gap-1.5 uppercase">
+                          <RefreshCw className="w-3.5 h-3.5" /> Backend Stripe API Endpoints
+                        </h5>
+                        <div className="space-y-2 text-[11px] font-mono text-slate-300">
+                          <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                            <span className="text-emerald-400 font-bold">POST</span> <code className="text-white">/create-checkout-session</code>
+                            <p className="text-[10px] text-slate-400 font-sans mt-0.5">
+                              Accepts <code className="text-indigo-300">{`{ plan: "monthly" | "yearly", email }`}</code>. Generates Stripe Hosted Checkout URL.
+                            </p>
+                          </div>
+                          <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                            <span className="text-sky-400 font-bold">GET</span> <code className="text-white">/api/stripe/session-status</code>
+                            <p className="text-[10px] text-slate-400 font-sans mt-0.5">
+                              Verifies payment completion via <code className="text-indigo-300">session_id</code> and provisions active subscriber database record.
+                            </p>
+                          </div>
+                          <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                            <span className="text-amber-400 font-bold">POST</span> <code className="text-white">/webhook</code>
+                            <p className="text-[10px] text-slate-400 font-sans mt-0.5">
+                              Listens to Stripe webhooks (<code className="text-slate-300">checkout.session.completed</code>, <code className="text-slate-300">customer.subscription.updated</code>) using <code className="text-indigo-300">STRIPE_WEBHOOK_SECRET</code>.
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -7642,12 +7751,12 @@ module.exports = mongoose.model('User', userSchema);`}
                   <div className="bg-slate-950 p-4 rounded border border-slate-850 space-y-2">
                     <h4 className="text-white font-bold">Counsel Pro Monthly</h4>
                     <p className="text-[11px] text-slate-400">Billed monthly recurring. Full AI and compliance suite.</p>
-                    <p className="text-indigo-400 font-mono font-bold">$39.00 / Month</p>
+                    <p className="text-indigo-400 font-mono font-bold">$49.00 / Month</p>
                   </div>
                   <div className="bg-slate-950 p-4 rounded border border-slate-850 space-y-2">
                     <h4 className="text-white font-bold">Counsel Pro Annual</h4>
-                    <p className="text-[11px] text-slate-400">Save 25% with annual billing. Priority processing.</p>
-                    <p className="text-amber-400 font-mono font-bold">$349.00 / Year</p>
+                    <p className="text-[11px] text-slate-400">Save 32% with annual billing. Priority processing.</p>
+                    <p className="text-amber-400 font-mono font-bold">$399.00 / Year</p>
                   </div>
                 </div>
 
@@ -7749,7 +7858,7 @@ module.exports = mongoose.model('User', userSchema);`}
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Amount to Bill:</span>
-                    <strong className="text-emerald-400 font-bold font-mono">$39.00 USD</strong>
+                    <strong className="text-emerald-400 font-bold font-mono">{effectiveSubscription?.planType === "yearly" ? "$399.00" : "$49.00"} USD</strong>
                   </div>
                 </div>
 

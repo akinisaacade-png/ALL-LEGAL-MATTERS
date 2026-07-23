@@ -52,6 +52,7 @@ export default function AdminConsole({ currentUser, showToast, onRefreshAll }: A
   const [subsList, setSubsList] = useState<SubscriptionRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"users" | "payment_docs">("users");
   
   // Quick Edit States
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
@@ -354,17 +355,143 @@ export default function AdminConsole({ currentUser, showToast, onRefreshAll }: A
         </div>
       </div>
 
-      {/* Search Input Filter */}
-      <div className="p-4 bg-slate-900/40 border-b border-slate-800 flex items-center gap-2">
-        <Search className="w-4 h-4 text-slate-500" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Filter personnel database or subscriptions by email name or keyword..."
-          className="bg-transparent text-xs text-white placeholder-slate-500 border-none outline-none w-full"
-        />
+      {/* Navigation Sub-Tabs in Admin Console */}
+      <div className="bg-slate-950 border-b border-slate-800 px-6 pt-3 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`px-4 py-2.5 rounded-t-lg font-mono text-xs font-bold transition flex items-center gap-2 border-t border-x ${
+              activeTab === "users"
+                ? "bg-slate-900 border-slate-750 text-white shadow-sm"
+                : "bg-slate-950 border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Users className="w-4 h-4 text-indigo-400" />
+            Personnel Records & Accounts
+          </button>
+          <button
+            onClick={() => setActiveTab("payment_docs")}
+            className={`px-4 py-2.5 rounded-t-lg font-mono text-xs font-bold transition flex items-center gap-2 border-t border-x ${
+              activeTab === "payment_docs"
+                ? "bg-slate-900 border-slate-750 text-amber-400 shadow-sm"
+                : "bg-slate-950 border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <CreditCard className="w-4 h-4 text-amber-400" />
+            Stripe Payment Documentation
+          </button>
+        </div>
+
+        {activeTab === "users" && (
+          <div className="flex items-center gap-2 pb-2">
+            <Search className="w-4 h-4 text-slate-500" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter personnel database..."
+              className="bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 rounded px-3 py-1.5 outline-none w-64"
+            />
+          </div>
+        )}
       </div>
+
+      {activeTab === "payment_docs" ? (
+        <div className="p-6 space-y-6 bg-slate-900/60 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
+            <div className="flex justify-between items-start flex-wrap gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-400 bg-indigo-950/60 border border-indigo-500/30 px-2.5 py-0.5 rounded">
+                  System Billing Specification
+                </span>
+                <h3 className="text-lg font-extrabold text-white mt-1">
+                  Stripe Backend Payment & Subscription Documentation
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                  Comprehensive architectural guide mapping Stripe Checkout endpoints, price identifiers, webhook triggers, and local database subscription synchronization.
+                </p>
+              </div>
+              <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1 rounded text-xs font-mono font-bold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                ACTIVE & SYNCED
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              {/* Plan Pricing Card */}
+              <div className="bg-slate-950 border border-slate-800 p-5 rounded-lg space-y-4">
+                <h4 className="text-xs font-mono font-black uppercase text-amber-400 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" /> Subscription Plans & Price Mapping
+                </h4>
+
+                <div className="space-y-3 text-xs">
+                  <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-white font-bold font-sans">Monthly Subscription</span>
+                      <span className="text-emerald-400 font-mono font-extrabold">$49.00 / month</span>
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
+                      <p>Env Var: <code className="text-indigo-300">STRIPE_PRICE_ID_MONTHLY</code></p>
+                      <p>Active Price ID: <code className="text-slate-200">price_1TfENIBMbxh6jv0CBKolLI4B</code></p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-white font-bold font-sans">Yearly (Annual) Subscription</span>
+                      <span className="text-amber-400 font-mono font-extrabold">$399.00 / year</span>
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
+                      <p>Savings: <span className="text-amber-400 font-bold">32% discount</span> off monthly pricing</p>
+                      <p>Env Var: <code className="text-indigo-300">STRIPE_PRICE_ID_YEARLY</code></p>
+                      <p>Active Price ID: <code className="text-slate-200">price_1TfEPRBMbxh6jv0CKiwDzY4x</code></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Express Endpoints Card */}
+              <div className="bg-slate-950 border border-slate-800 p-5 rounded-lg space-y-4">
+                <h4 className="text-xs font-mono font-black uppercase text-indigo-400 flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4" /> Express Server API Endpoints
+                </h4>
+
+                <div className="space-y-2.5 text-xs font-mono">
+                  <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded text-[10px] font-bold">POST</span>
+                      <code className="text-white font-bold">/create-checkout-session</code>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-sans">
+                      Initiates a Stripe Checkout session in <code className="text-indigo-300 font-mono">subscription</code> mode. Accepts <code className="text-indigo-300 font-mono">{`{ plan: "monthly" | "yearly", email }`}</code>. Returns checkout URL.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-sky-950 text-sky-400 px-1.5 py-0.5 rounded text-[10px] font-bold">GET</span>
+                      <code className="text-white font-bold">/api/stripe/session-status</code>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-sans">
+                      Validates payment state with Stripe API using <code className="text-slate-300 font-mono">session_id</code> and provisions active paid user record in local database and Firestore.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded text-[10px] font-bold">POST</span>
+                      <code className="text-white font-bold">/webhook</code>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-sans">
+                      Handles Stripe webhooks (<code className="text-slate-300 font-mono">checkout.session.completed</code>, <code className="text-slate-300 font-mono">customer.subscription.updated</code>) signed with <code className="text-indigo-300 font-mono">STRIPE_WEBHOOK_SECRET</code>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Master editing overlay / editor card */}
       {editingUser && (
