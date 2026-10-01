@@ -15,15 +15,9 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Ensure your CORS configuration explicitly safelists your live frontends
+// Ensure CORS configuration flexibly accepts all preview and deployment origins
 app.use(cors({
-  origin: [
-    'https://all-legal-matters-51080746448.us-east1.run.app',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://ais-dev-xabfdbnimavnerjahn5ai7-794436270631.us-east1.run.app',
-    'https://ais-pre-xabfdbnimavnerjahn5ai7-794436270631.us-east1.run.app'
-  ],
+  origin: true,
   credentials: true
 }));
 

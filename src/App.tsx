@@ -54,6 +54,13 @@ import {
   HelpCircle,
   Users,
   Share2,
+  CheckSquare,
+  Square,
+  Files,
+  Eye,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { JURISDICTIONS_DATA, MOCH_ATTORNEYS, LEGAL_DOMAINS } from "./data";
 import { SovereignJurisdiction, LegalDocument, ConsultationBooking, ChatMessage, Attorney, DocumentVersion } from "./types";
@@ -71,11 +78,19 @@ import {
   Legend
 } from "recharts";
 import { collection, doc, getDocs, setDoc, deleteDoc, getDoc } from "firebase/firestore";
+import type { User } from "firebase/auth";
 import { db } from "./firebase";
 import ComplianceDashboard from "./components/ComplianceDashboard";
 import AuthPortal from "./components/AuthPortal";
 import AdminConsole from "./components/AdminConsole";
 import EuropeJurisdictionsPanel from "./components/EuropeJurisdictionsPanel";
+import ComplianceAudioSummary from "./components/ComplianceAudioSummary";
+import LegalGlossary from "./components/LegalGlossary";
+import LawyerMatching from "./components/LawyerMatching";
+import BulkDocumentExportModal from "./components/BulkDocumentExportModal";
+import EmbeddedPdfViewer from "./components/EmbeddedPdfViewer";
+import BatchRenameModal from "./components/BatchRenameModal";
+import { downloadDocumentAsPdf, downloadBulkDocumentsAsPdf } from "./utils/pdfGenerator";
 import { seedEuropeJurisdictions, seedEuropeSubnationalJurisdictions } from "./utils/europeJurisdictions";
 import { scanDocumentCompliance, ComplianceAlert } from "./complianceEngine";
 
@@ -92,31 +107,39 @@ async function safeFetchJson<T>(url: string, options?: RequestInit): Promise<T |
     
     // Explicitly catch rate limits or server breakdowns before reading as JSON
     if (response.status === 429 || !response.ok) {
-      console.warn(`API responded with status ${response.status}. Skipping JSON serialization parsing.`);
       return null;
     }
 
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
-      const plainText = await response.text();
-      if (plainText.includes("Rate exceeded") || plainText.includes("Too Many Requests")) {
-        console.warn(`Response from ${url} indicated rate limit reached.`);
-        return null; // Gracefully catch plain text limit triggers
-      }
-      console.warn(`Response from ${url} was not JSON: ${plainText.slice(0, 100)}`);
       return null;
     }
 
     return await response.json() as T;
-  } catch (error) {
-    console.error("Intercepted network parse failure safely:", error);
+  } catch (_error) {
+    // Return null silently for any network/offline disruptions
     return null;
   }
 }
 
 export default function App() {
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<"directory" | "counsel" | "vault" | "compliance" | "forms" | "consultations" | "multimodal" | "maintenance" | "translation" | "billing" | "auth" | "admin">("directory");
+  const [activeTab, setActiveTab] = useState<
+    | "directory"
+    | "counsel"
+    | "vault"
+    | "compliance"
+    | "forms"
+    | "consultations"
+    | "multimodal"
+    | "maintenance"
+    | "translation"
+    | "billing"
+    | "auth"
+    | "admin"
+    | "lawyer-match"
+    | "glossary"
+  >("directory");
 
   // Dynamic Public Accounts Auth States
   const [currentUser, setCurrentUser] = useState<{
@@ -206,11 +229,17 @@ export default function App() {
   const [uploadedDocs, setUploadedDocs] = useState<LegalDocument[]>([]);
   const [vaultLoading, setVaultLoading] = useState<boolean>(false);
   const [selectedVaultDoc, setSelectedVaultDoc] = useState<LegalDocument | null>(null);
+  const [selectedBulkDocIds, setSelectedBulkDocIds] = useState<string[]>([]);
+  const [showBulkExportModal, setShowBulkExportModal] = useState<boolean>(false);
+  const [showBatchRenameModal, setShowBatchRenameModal] = useState<boolean>(false);
+  const [showEmbeddedPdfViewer, setShowEmbeddedPdfViewer] = useState<boolean>(true);
   const [vaultViewMode, setVaultViewMode] = useState<"list" | "details">("list");
   const [ocrText, setOcrText] = useState<string>("");
   const [ocrDocName, setOcrDocName] = useState<string>("");
   const [ocrDocCategory, setOcrDocCategory] = useState<string>("contracts");
   const [docSearchQuery, setDocSearchQuery] = useState<string>("");
+  const [docSortBy, setDocSortBy] = useState<"date" | "risk" | "name">("date");
+  const [docSortOrder, setDocSortOrder] = useState<"asc" | "desc">("desc");
   const [tagInput, setTagInput] = useState<string>("");
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   
@@ -519,11 +548,18 @@ export default function App() {
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
-    // Register offline Cache service worker
+    // Unregister any stale service workers and clear cache to ensure latest code executes
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js")
-        .then(() => console.log("Sovereign Document Vault SW Active"))
-        .catch((err) => console.warn("ServiceWorker Registration Failed:", err));
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+      });
+      if ("caches" in window) {
+        caches.keys().then((keys) => {
+          keys.forEach((key) => caches.delete(key));
+        });
+      }
     }
 
     return () => {
@@ -542,7 +578,7 @@ export default function App() {
   // Fetch Subscription and Register 7-day Free Trial on startup or user change
   useEffect(() => {
     fetchSubscription();
-    registerAndCheckTrial();
+    registerAndCheckTrial(currentUser as any);
   }, [currentUser]);
 
   // Handle Stripe Success Callback Verification
@@ -665,7 +701,29 @@ export default function App() {
   };
 
   const fetchSubscription = async () => {
-    const userEmail = currentUser?.email || "guest@alllegalmatters.com";
+    const isGuest =
+      !currentUser ||
+      !currentUser.email ||
+      currentUser.email.toLowerCase().includes("guest") ||
+      currentUser.email === "guest@alllegalmatters.com";
+
+    if (isGuest) {
+      // In Guest Mode, user has no cloud subscription by default
+      const cachedGuestSub = localStorage.getItem("guest_subscription");
+      if (cachedGuestSub) {
+        try {
+          setSubscription(JSON.parse(cachedGuestSub));
+        } catch {
+          setSubscription(null);
+        }
+      } else {
+        setSubscription(null);
+      }
+      setSubLoaded(true);
+      return;
+    }
+
+    const userEmail = currentUser.email;
     try {
       // 1. First, check Firestore for active subscription
       const docRef = doc(db, "subscriptions", userEmail.replace(/\./g, "_"));
@@ -681,14 +739,15 @@ export default function App() {
         setSubLoaded(true);
         return;
       }
-    } catch (e) {
-      console.warn("Firestore subscription fetch error, falling back to backend:", e);
+    } catch (_e) {
+      // Continue to local/backend fallback
     }
 
     try {
-      // 2. Fall back to backend database
-      const res = await fetch(`/api/stripe/subscription?email=${encodeURIComponent(userEmail)}`);
-      const data = await res.json();
+      // 2. Fall back to backend database safely
+      const data = await safeFetchJson<{ subscription?: any }>(
+        `/api/stripe/subscription?email=${encodeURIComponent(userEmail)}`
+      );
       if (data && data.subscription) {
         setSubscription({
           status: data.subscription.status,
@@ -699,22 +758,68 @@ export default function App() {
       } else {
         setSubscription(null);
       }
-    } catch (e) {
-      console.error("Error fetching subscription from stripe backend:", e);
+    } catch (_e) {
+      setSubscription(null);
     } finally {
       setSubLoaded(true);
     }
   };
 
-  const registerAndCheckTrial = async () => {
-    const userEmail = currentUser?.email || "guest@alllegalmatters.com";
+  const registerAndCheckTrial = async (user?: User | any | null) => {
+    // Handle Guest Mode cleanly without throwing or logging errors
+    const targetUser = user !== undefined ? user : currentUser;
+    if (
+      !targetUser ||
+      targetUser.isAnonymous ||
+      !targetUser.email ||
+      targetUser.email.toLowerCase().includes("guest") ||
+      targetUser.email === "guest@alllegalmatters.com"
+    ) {
+      // Read or initialize 7-day trial locally via localStorage
+      const storedTrialStart =
+        localStorage.getItem("guest_trial_start") ||
+        localStorage.getItem("guest_trial_starts") ||
+        localStorage.getItem("trial_starts");
+      let trialStart = storedTrialStart ? parseInt(storedTrialStart, 10) : Date.now();
+      if (isNaN(trialStart)) {
+        const parsed = new Date(storedTrialStart!).getTime();
+        trialStart = isNaN(parsed) ? Date.now() : parsed;
+      }
+
+      if (!storedTrialStart) {
+        localStorage.setItem("guest_trial_start", trialStart.toString());
+      }
+
+      const trialDuration = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+      const isExpired = Date.now() - trialStart > trialDuration;
+      const daysRemaining = Math.max(
+        0,
+        Math.ceil((trialDuration - (Date.now() - trialStart)) / (1000 * 60 * 60 * 24))
+      );
+
+      setTrialStatus({
+        isTrialActive: !isExpired,
+        daysRemaining,
+        daysTotal: 7,
+      });
+      setTrialLoaded(true);
+
+      return {
+        isGuest: true,
+        trialExpired: isExpired,
+        daysRemaining,
+      };
+    }
+
+    // Authenticated Firestore User Lookup
     try {
-      const userRef = doc(db, "users", userEmail.replace(/\./g, "_"));
-      const userSnap = await getDoc(userRef);
-      let profileData;
+      const userDocId = targetUser.uid || targetUser.email.replace(/\./g, "_");
+      const userDocRef = doc(db, "users", userDocId);
+      const userSnap = await getDoc(userDocRef);
+
       if (userSnap.exists()) {
-        const uData = userSnap.data();
-        if (uData.isActive === false) {
+        const data = userSnap.data();
+        if (data.isActive === false) {
           showToast("⚠️ This account has been deactivated by an administrator.");
           setCurrentUser(null);
           localStorage.removeItem("sovereign_current_user");
@@ -722,61 +827,70 @@ export default function App() {
           setTrialStatus({ isTrialActive: false, daysRemaining: 0, daysTotal: 7 });
           setActiveTab("auth");
           setAuthView("signin");
-          return;
+          setTrialLoaded(true);
+          return data;
         }
-        profileData = uData as { email: string; createdAt: string; name?: string };
+
+        setUserProfile(data as any);
+
+        const regDate = data.createdAt ? new Date(data.createdAt).getTime() : Date.now();
+        const trialDuration = 7 * 24 * 60 * 60 * 1000;
+        const isExpired = Date.now() - regDate > trialDuration;
+        const daysRemaining = Math.max(
+          0,
+          Math.ceil((trialDuration - (Date.now() - regDate)) / (1000 * 60 * 60 * 24))
+        );
+
+        setTrialStatus({
+          isTrialActive: !isExpired,
+          daysRemaining,
+          daysTotal: 7,
+        });
+        setTrialLoaded(true);
+        return data;
       } else {
-        // Newly registered user or system fallback! Create profile with 7-day free trial if we have active user
-        if (!currentUser) {
-          // If public guest mode and no profile, do not auto-seed a trial on DB, just use default/local trial fallback
-          throw new Error("Guest Mode: Use local state trial calculation.");
-        }
-        profileData = {
-          email: userEmail,
-          name: currentUser.name,
-          createdAt: currentUser.createdAt || new Date().toISOString()
+        const profileData = {
+          email: targetUser.email,
+          name: targetUser.name || "Member",
+          createdAt: targetUser.createdAt || new Date().toISOString(),
         };
-        await setDoc(userRef, profileData);
-        setTimeout(() => {
-          showToast("🎁 Welcome! Your 7-day Premium Free Trial has started.");
-        }, 1200);
+        try {
+          await setDoc(userDocRef, profileData);
+          setTimeout(() => {
+            showToast("🎁 Welcome! Your 7-day Premium Free Trial has started.");
+          }, 1200);
+        } catch (saveErr) {
+          console.warn("Could not save initial profile to Firestore:", saveErr);
+        }
+        setUserProfile(profileData);
+        setTrialStatus({
+          isTrialActive: true,
+          daysRemaining: 7,
+          daysTotal: 7,
+        });
+        setTrialLoaded(true);
+        return profileData;
       }
-      
-      setUserProfile(profileData);
-      
-      // Calculate trial status
-      const now = new Date();
-      const regDate = new Date(profileData.createdAt || new Date().toISOString());
-      const diffTime = now.getTime() - regDate.getTime();
-      const diffDays = Math.max(0, diffTime / (1000 * 60 * 60 * 24));
-      const daysRemaining = Math.max(0, 7 - diffDays);
-      const isTrialActive = diffDays < 7;
-      
-      setTrialStatus({
-        isTrialActive,
-        daysRemaining: Math.ceil(daysRemaining * 100) / 100,
-        daysTotal: 7
-      });
-    } catch (err) {
-      console.warn("Firestore user profile/trial offline or quota exceeded, using local state:", err);
-      // Fallback local persistence if Firestore is unreachable or in guest mode
-      const cachedCreated = localStorage.getItem("trial_starts") || new Date().toISOString();
-      if (!localStorage.getItem("trial_starts")) {
-        localStorage.setItem("trial_starts", cachedCreated);
-      }
-      const now = new Date();
-      const regDate = new Date(cachedCreated);
-      const diffTime = now.getTime() - regDate.getTime();
-      const diffDays = Math.max(0, diffTime / (1000 * 60 * 65 * 24));
-      const daysRemaining = Math.max(0, 7 - diffDays);
-      const isTrialActive = diffDays < 7;
+    } catch (_error) {
+      // Silently fall back to cached local trial state on connectivity failure
+      const cachedCreated =
+        targetUser.createdAt ||
+        localStorage.getItem("trial_starts") ||
+        localStorage.getItem("guest_trial_start") ||
+        new Date().toISOString();
+      const regDate = new Date(cachedCreated).getTime();
+      const trialDuration = 7 * 24 * 60 * 60 * 1000;
+      const isExpired = Date.now() - regDate > trialDuration;
+      const daysRemaining = Math.max(
+        0,
+        Math.ceil((trialDuration - (Date.now() - regDate)) / (1000 * 60 * 60 * 24))
+      );
 
       setTrialStatus({
-        isTrialActive,
-        daysRemaining: Math.ceil(daysRemaining * 100) / 100,
-        daysTotal: 7
+        isTrialActive: !isExpired,
+        daysRemaining,
+        daysTotal: 7,
       });
-    } finally {
       setTrialLoaded(true);
     }
   };
@@ -836,13 +950,16 @@ export default function App() {
           setSelectedVaultDoc(docList[0]);
         }
       } else {
-        // Firestore is empty! Seed with initial default document from Express backend
-        const response = await fetch("/api/documents");
-        const resData = await response.json();
+        // Firestore is empty! Seed with initial default document from Express backend safely
+        const resData = await safeFetchJson<{ documents?: LegalDocument[] }>("/api/documents");
         if (resData && resData.documents) {
           const seededList = resData.documents;
           for (const d of seededList) {
-            await setDoc(doc(db, "documents", d.id), d);
+            try {
+              await setDoc(doc(db, "documents", d.id), d);
+            } catch (seedErr) {
+              console.warn("Could not seed document to Firestore:", seedErr);
+            }
           }
           setUploadedDocs(seededList);
           localStorage.setItem("cached_documents", JSON.stringify(seededList));
@@ -884,13 +1001,16 @@ export default function App() {
         bookingList.sort((a, b) => new Date(b.date + "T" + b.time).getTime() - new Date(a.date + "T" + a.time).getTime());
         setBookings(bookingList);
       } else {
-        // Seed from Express backend initial booking list
-        const response = await fetch("/api/bookings");
-        const resData = await response.json();
+        // Seed from Express backend initial booking list safely
+        const resData = await safeFetchJson<{ bookings?: ConsultationBooking[] }>("/api/bookings");
         if (resData && resData.bookings) {
           const seeded = resData.bookings;
           for (const b of seeded) {
-            await setDoc(doc(db, "bookings", b.id), b);
+            try {
+              await setDoc(doc(db, "bookings", b.id), b);
+            } catch (seedErr) {
+              console.warn("Could not seed booking to Firestore:", seedErr);
+            }
           }
           setBookings(seeded);
           showToast("⚡ Seeded default consultant bookings into Cloud Firestore!");
@@ -899,8 +1019,7 @@ export default function App() {
     } catch (e) {
       console.warn("Firestore bookings sync error, fallback to local fetch:", e);
       try {
-        const response = await fetch("/api/bookings");
-        const resData = await response.json();
+        const resData = await safeFetchJson<{ bookings?: ConsultationBooking[] }>("/api/bookings");
         if (resData && resData.bookings) {
           setBookings(resData.bookings);
         }
@@ -1224,6 +1343,43 @@ export default function App() {
       }
       setVaultViewMode("list");
     }
+  };
+
+  const handleBatchRename = async (renamedDocs: { id: string; newName: string }[]) => {
+    const renameMap = new Map(renamedDocs.map((r) => [r.id, r.newName]));
+
+    const updatedList = uploadedDocs.map((doc) => {
+      if (renameMap.has(doc.id)) {
+        return {
+          ...doc,
+          name: renameMap.get(doc.id)!,
+          uploadedAt: new Date().toISOString(),
+        };
+      }
+      return doc;
+    });
+
+    setUploadedDocs(updatedList);
+    localStorage.setItem("cached_documents", JSON.stringify(updatedList));
+
+    if (selectedVaultDoc && renameMap.has(selectedVaultDoc.id)) {
+      setSelectedVaultDoc({
+        ...selectedVaultDoc,
+        name: renameMap.get(selectedVaultDoc.id)!,
+      });
+    }
+
+    // Persist changes to Cloud Firestore
+    renamedDocs.forEach(async (r) => {
+      try {
+        const found = updatedList.find((d) => d.id === r.id);
+        if (found) {
+          await setDoc(doc(db, "documents", r.id), found);
+        }
+      } catch (err) {
+        console.warn("Could not sync renamed document to Cloud Firestore:", err);
+      }
+    });
   };
 
   const handleAddTag = async (documentId: string) => {
@@ -2207,6 +2363,28 @@ This power is durable and persists through any subsequent incapacity.`;
           >
             <Calendar className="w-4 h-4 text-slate-200" />
             Professional Booking
+          </button>
+
+          <button
+            id="tab-btn-lawyer-match"
+            onClick={() => setActiveTab("lawyer-match")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
+              activeTab === "lawyer-match" ? "bg-indigo-600 text-white border-b-2 border-amber-400" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            <UserCheck className="w-4 h-4 text-emerald-400" />
+            Lawyer Matching
+          </button>
+
+          <button
+            id="tab-btn-glossary"
+            onClick={() => setActiveTab("glossary")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
+              activeTab === "glossary" ? "bg-indigo-600 text-white border-b-2 border-amber-400" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            <BookOpen className="w-4 h-4 text-amber-300" />
+            Legal Glossary
           </button>
 
           <button
@@ -3914,6 +4092,47 @@ This power is durable and persists through any subsequent incapacity.`;
           {/* 3. Secure Document Vault & OCR Analysis */}
           {activeTab === "vault" && (
             <div className="space-y-4">
+              {/* Sovereign Vault Header & Bulk Printing Bar */}
+              <div className="bg-slate-950 p-4 sm:p-5 rounded-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-mono tracking-widest text-amber-400 uppercase font-black flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      DOCUMENT VAULT & COMPENDIUM
+                    </span>
+                    <span className="text-[9px] bg-slate-900 text-slate-400 border border-slate-800 px-1.5 py-0.2 rounded font-mono">
+                      {uploadedDocs.length} Total Documents
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                    Secure Legal Document Vault & OCR Analysis
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Select multiple agreements for unified bulk printing and export a combined portfolio PDF complete with Table of Contents and compliance audits.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedBulkDocIds.length === 0) {
+                        setSelectedBulkDocIds(uploadedDocs.map((d) => d.id));
+                      }
+                      setShowBulkExportModal(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-lg shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+                    title="Bulk print multiple selected documents into a combined PDF file"
+                  >
+                    <Printer className="w-4 h-4 text-slate-950" />
+                    <span>
+                      Bulk Print Portfolio{" "}
+                      {selectedBulkDocIds.length > 0 ? `(${selectedBulkDocIds.length} Queued)` : "All"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               {/* Mobile View Switcher Tabs */}
               <div className="flex lg:hidden bg-slate-900 p-1 rounded-lg border border-slate-800 gap-1 mb-2">
                 <button
@@ -4100,70 +4319,326 @@ This power is durable and persists through any subsequent incapacity.`;
                           )}
                         </div>
 
+                        {/* Document Vault Sorting Controls */}
+                        <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 mb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] uppercase font-mono font-bold text-slate-400 flex items-center gap-1">
+                              <ArrowUpDown className="w-3 h-3 text-indigo-400" />
+                              Order:
+                            </span>
+                            <div className="inline-flex rounded-md bg-slate-950 p-0.5 border border-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => setDocSortBy("date")}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                                  docSortBy === "date"
+                                    ? "bg-indigo-600 text-white shadow"
+                                    : "text-slate-400 hover:text-slate-200"
+                                }`}
+                                title="Sort documents by upload date"
+                              >
+                                Date Uploaded
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDocSortBy("risk")}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                                  docSortBy === "risk"
+                                    ? "bg-indigo-600 text-white shadow"
+                                    : "text-slate-400 hover:text-slate-200"
+                                }`}
+                                title="Sort documents by compliance risk score"
+                              >
+                                Risk Score
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDocSortBy("name")}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                                  docSortBy === "name"
+                                    ? "bg-indigo-600 text-white shadow"
+                                    : "text-slate-400 hover:text-slate-200"
+                                }`}
+                                title="Sort documents alphabetically by name"
+                              >
+                                Name
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => setDocSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 text-[10px] font-mono font-bold border border-slate-700 transition-colors"
+                              title={`Current sort direction: ${docSortOrder === "asc" ? "Ascending" : "Descending"}. Click to toggle.`}
+                            >
+                              {docSortOrder === "asc" ? (
+                                <>
+                                  <ArrowUp className="w-3 h-3 text-emerald-400" />
+                                  <span>
+                                    {docSortBy === "date"
+                                      ? "Oldest First"
+                                      : docSortBy === "risk"
+                                      ? "Lowest Risk"
+                                      : "A → Z"}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <ArrowDown className="w-3 h-3 text-amber-400" />
+                                  <span>
+                                    {docSortBy === "date"
+                                      ? "Newest First"
+                                      : docSortBy === "risk"
+                                      ? "Highest Risk"
+                                      : "Z → A"}
+                                  </span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Bulk Multi-Select & Print Control Strip */}
+                        <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const visibleDocs = uploadedDocs.filter((doc) => {
+                                  if (!docSearchQuery.trim()) return true;
+                                  const q = docSearchQuery.toLowerCase();
+                                  return (
+                                    doc.name.toLowerCase().includes(q) ||
+                                    doc.category.toLowerCase().includes(q) ||
+                                    (doc.tags || []).some((t) => t.toLowerCase().includes(q))
+                                  );
+                                });
+                                const visibleIds = visibleDocs.map((d) => d.id);
+                                const allVisibleSelected =
+                                  visibleIds.length > 0 && visibleIds.every((id) => selectedBulkDocIds.includes(id));
+                                if (allVisibleSelected) {
+                                  setSelectedBulkDocIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+                                } else {
+                                  setSelectedBulkDocIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+                                }
+                              }}
+                              className="text-indigo-400 hover:text-indigo-300 font-bold text-[11px] flex items-center gap-1.5 shrink-0"
+                              title="Toggle select all visible documents"
+                            >
+                              {selectedBulkDocIds.length > 0 &&
+                              uploadedDocs.length > 0 &&
+                              uploadedDocs.every((d) => selectedBulkDocIds.includes(d.id)) ? (
+                                <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                              ) : (
+                                <Square className="w-3.5 h-3.5 text-slate-500" />
+                              )}
+                              <span>
+                                {selectedBulkDocIds.length > 0
+                                  ? `${selectedBulkDocIds.length} Queued`
+                                  : `Select All (${uploadedDocs.length})`}
+                              </span>
+                            </button>
+
+                            {selectedBulkDocIds.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedBulkDocIds([])}
+                                className="text-[10px] text-slate-500 hover:text-slate-300 font-mono underline"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedBulkDocIds.length === 0) {
+                                  setSelectedBulkDocIds(uploadedDocs.map((d) => d.id));
+                                }
+                                setShowBatchRenameModal(true);
+                              }}
+                              className="flex items-center gap-1 px-2.5 py-1 bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-300 hover:text-white rounded text-[10px] font-bold uppercase tracking-tight transition-all shrink-0"
+                              title="Batch rename selected agreements using sequential numbering or regex pattern replacements"
+                            >
+                              <FileEdit className="w-3 h-3 text-indigo-400" />
+                              <span>Rename ({selectedBulkDocIds.length > 0 ? selectedBulkDocIds.length : "All"})</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedBulkDocIds.length === 0) {
+                                  setSelectedBulkDocIds(uploadedDocs.map((d) => d.id));
+                                }
+                                setShowBulkExportModal(true);
+                              }}
+                              className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:text-amber-200 rounded text-[10px] font-bold uppercase tracking-tight transition-all shrink-0"
+                              title="Export selected documents to combined PDF"
+                            >
+                              <Printer className="w-3 h-3 text-amber-400" />
+                              <span>Export PDF ({selectedBulkDocIds.length > 0 ? selectedBulkDocIds.length : "All"})</span>
+                            </button>
+                          </div>
+                        </div>
+
                         <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-                          {uploadedDocs.filter((doc) => {
-                            if (!docSearchQuery.trim()) return true;
-                            const q = docSearchQuery.toLowerCase();
-                            return (
-                              doc.name.toLowerCase().includes(q) ||
-                              doc.category.toLowerCase().includes(q) ||
-                              (doc.tags || []).some(t => t.toLowerCase().includes(q))
-                            );
-                          }).length === 0 ? (
-                            <p className="text-[11px] text-slate-500 italic py-6 text-center">No agreements match your search criteria.</p>
-                          ) : (
-                            uploadedDocs.filter((doc) => {
+                          {uploadedDocs
+                            .filter((doc) => {
                               if (!docSearchQuery.trim()) return true;
                               const q = docSearchQuery.toLowerCase();
                               return (
                                 doc.name.toLowerCase().includes(q) ||
                                 doc.category.toLowerCase().includes(q) ||
-                                (doc.tags || []).some(t => t.toLowerCase().includes(q))
+                                (doc.tags || []).some((t) => t.toLowerCase().includes(q))
                               );
-                            }).map((doc) => (
-                              <motion.div
-                                key={doc.id}
-                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                transition={{ duration: 0.35, ease: "easeOut" }}
-                                layout
-                                onClick={() => {
-                                  setSelectedVaultDoc(doc);
-                                  setVaultViewMode("details");
-                                }}
-                                className={`p-3 bg-slate-900 border rounded-lg cursor-pointer transition-all flex flex-col gap-2.5 ${
-                                  selectedVaultDoc?.id === doc.id ? "border-indigo-500 ring-1 ring-indigo-500" : "border-slate-800 hover:border-slate-700"
-                                }`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <FileText className={`w-5 h-5 ${doc.riskScore > 50 ? "text-red-400" : "text-emerald-400"}`} />
-                                  <div className="flex-1 overflow-hidden">
-                                    <p className="text-xs font-bold text-white truncate">{doc.name}</p>
-                                    <p className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">{doc.category} · {doc.size}</p>
-                                  </div>
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                    doc.riskScore > 50 ? "bg-red-950 text-red-300 border border-red-900" : "bg-emerald-950 text-emerald-300 border border-emerald-900"
-                                  }`}>
-                                    Risk: {doc.riskScore}
-                                  </span>
-                                </div>
-
-                                {/* Tag capsules block */}
-                                {doc.tags && doc.tags.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 border-t border-slate-800/40 pt-1.5">
-                                    {doc.tags.map((tag, tagIndex) => (
-                                      <span
-                                        key={tagIndex}
-                                        className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-950/40 border border-indigo-900/30 text-indigo-300 flex items-center"
-                                        title={`Filtered tag: ${tag}`}
+                            })
+                            .sort((a, b) => {
+                              if (docSortBy === "date") {
+                                const timeA = new Date(a.uploadedAt || 0).getTime();
+                                const timeB = new Date(b.uploadedAt || 0).getTime();
+                                return docSortOrder === "asc" ? timeA - timeB : timeB - timeA;
+                              }
+                              if (docSortBy === "risk") {
+                                const riskA = typeof a.riskScore === "number" ? a.riskScore : 0;
+                                const riskB = typeof b.riskScore === "number" ? b.riskScore : 0;
+                                return docSortOrder === "asc" ? riskA - riskB : riskB - riskA;
+                              }
+                              if (docSortBy === "name") {
+                                const nameA = a.name || "";
+                                const nameB = b.name || "";
+                                const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+                                return docSortOrder === "asc" ? cmp : -cmp;
+                              }
+                              return 0;
+                            }).length === 0 ? (
+                            <p className="text-[11px] text-slate-500 italic py-6 text-center">No agreements match your search criteria.</p>
+                          ) : (
+                            uploadedDocs
+                              .filter((doc) => {
+                                if (!docSearchQuery.trim()) return true;
+                                const q = docSearchQuery.toLowerCase();
+                                return (
+                                  doc.name.toLowerCase().includes(q) ||
+                                  doc.category.toLowerCase().includes(q) ||
+                                  (doc.tags || []).some((t) => t.toLowerCase().includes(q))
+                                );
+                              })
+                              .sort((a, b) => {
+                                if (docSortBy === "date") {
+                                  const timeA = new Date(a.uploadedAt || 0).getTime();
+                                  const timeB = new Date(b.uploadedAt || 0).getTime();
+                                  return docSortOrder === "asc" ? timeA - timeB : timeB - timeA;
+                                }
+                                if (docSortBy === "risk") {
+                                  const riskA = typeof a.riskScore === "number" ? a.riskScore : 0;
+                                  const riskB = typeof b.riskScore === "number" ? b.riskScore : 0;
+                                  return docSortOrder === "asc" ? riskA - riskB : riskB - riskA;
+                                }
+                                if (docSortBy === "name") {
+                                  const nameA = a.name || "";
+                                  const nameB = b.name || "";
+                                  const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+                                  return docSortOrder === "asc" ? cmp : -cmp;
+                                }
+                                return 0;
+                              })
+                              .map((doc) => {
+                                const isBulkSelected = selectedBulkDocIds.includes(doc.id);
+                                return (
+                                  <motion.div
+                                    key={doc.id}
+                                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    transition={{ duration: 0.35, ease: "easeOut" }}
+                                    layout
+                                    onClick={() => {
+                                      setSelectedVaultDoc(doc);
+                                      setVaultViewMode("details");
+                                    }}
+                                    className={`p-3 bg-slate-900 border rounded-lg cursor-pointer transition-all flex flex-col gap-2.5 ${
+                                      selectedVaultDoc?.id === doc.id
+                                        ? "border-indigo-500 ring-1 ring-indigo-500"
+                                        : isBulkSelected
+                                        ? "border-amber-500/50 bg-slate-900/90"
+                                        : "border-slate-800 hover:border-slate-700"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2.5">
+                                      {/* Checkbox for Bulk Export Selection */}
+                                      <label
+                                        htmlFor={`vault-checkbox-${doc.id}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="flex items-center cursor-pointer shrink-0 p-1 rounded hover:bg-slate-800/80 transition-colors"
+                                        title={isBulkSelected ? "Deselect for bulk export" : "Select for bulk export"}
                                       >
-                                        #{tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </motion.div>
-                            ))
+                                        <input
+                                          type="checkbox"
+                                          id={`vault-checkbox-${doc.id}`}
+                                          data-testid="vault-item-checkbox"
+                                          aria-label={`Select ${doc.name} for bulk export`}
+                                          checked={isBulkSelected}
+                                          onChange={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedBulkDocIds((prev) =>
+                                              prev.includes(doc.id) ? prev.filter((id) => id !== doc.id) : [...prev, doc.id]
+                                            );
+                                          }}
+                                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-1 focus:ring-amber-400 focus:ring-offset-0 cursor-pointer accent-amber-500"
+                                        />
+                                      </label>
+
+                                      <FileText className={`w-5 h-5 shrink-0 ${doc.riskScore > 50 ? "text-red-400" : "text-emerald-400"}`} />
+                                      <div className="flex-1 overflow-hidden">
+                                        <p className="text-xs font-bold text-white truncate">{doc.name}</p>
+                                        <p className="text-[10px] text-slate-400 uppercase font-mono tracking-wider flex items-center gap-1.5 flex-wrap">
+                                          <span>{doc.category}</span>
+                                          <span>·</span>
+                                          <span>{doc.size}</span>
+                                          {doc.uploadedAt && (
+                                            <>
+                                              <span>·</span>
+                                              <span className="text-slate-400" title={`Uploaded: ${new Date(doc.uploadedAt).toLocaleString()}`}>
+                                                {new Date(doc.uploadedAt).toLocaleDateString()}
+                                              </span>
+                                            </>
+                                          )}
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1 shrink-0">
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                          doc.riskScore > 50 ? "bg-red-950 text-red-300 border border-red-900" : "bg-emerald-950 text-emerald-300 border border-emerald-900"
+                                        }`}>
+                                          Risk: {doc.riskScore}
+                                        </span>
+                                        {isBulkSelected && (
+                                          <span className="text-[8px] bg-amber-950/80 text-amber-400 border border-amber-800 px-1 py-0.2 rounded font-mono font-bold uppercase">
+                                            Queued
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Tag capsules block */}
+                                    {doc.tags && doc.tags.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 border-t border-slate-800/40 pt-1.5">
+                                        {doc.tags.map((tag, tagIndex) => (
+                                          <span
+                                            key={tagIndex}
+                                            className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-950/40 border border-indigo-900/30 text-indigo-300 flex items-center"
+                                            title={`Filtered tag: ${tag}`}
+                                          >
+                                            #{tag}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </motion.div>
+                                );
+                              })
                           )}
                         </div>
                       </div>
@@ -4277,6 +4752,13 @@ This power is durable and persists through any subsequent incapacity.`;
                             </div>
                           </div>
 
+                          {/* AI-driven Spoken Compliance Feedback Loop */}
+                          <ComplianceAudioSummary
+                            document={selectedVaultDoc}
+                            alerts={activeComplianceAlerts}
+                            showToast={showToast}
+                          />
+
                           {/* Real-time Jurisdictional Compliance Alerts System */}
                           {activeComplianceAlerts.length > 0 && (
                             <div className="bg-red-950/40 border border-red-850 p-5 rounded-xl space-y-3 shadow-lg">
@@ -4376,6 +4858,17 @@ This power is durable and persists through any subsequent incapacity.`;
                             </div>
                           )}
 
+                          {/* In-Platform Embedded PDF Document Viewer */}
+                          {showEmbeddedPdfViewer && (
+                            <EmbeddedPdfViewer
+                              document={selectedVaultDoc}
+                              alerts={activeComplianceAlerts}
+                              jurisdiction={selectedSubnational || selectedCountry}
+                              currentUser={currentUser}
+                              onClose={() => setShowEmbeddedPdfViewer(false)}
+                            />
+                          )}
+
                           {/* Text of contract box (Editable) */}
                           <div className="bg-slate-900 p-5 border border-slate-800 rounded-lg space-y-3">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/60 pb-2">
@@ -4423,6 +4916,83 @@ This power is durable and persists through any subsequent incapacity.`;
                                     >
                                       <Printer className="w-3 h-3 text-amber-400" />
                                       Print / PDF
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        downloadDocumentAsPdf({
+                                          document: selectedVaultDoc,
+                                          alerts: activeComplianceAlerts,
+                                          jurisdiction: selectedSubnational || selectedCountry,
+                                          currentUser: currentUser,
+                                        });
+                                        showToast(`📄 Exported complete compliance audit PDF for ${selectedVaultDoc.name}`);
+                                      }}
+                                      className="px-2 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-600/50 text-emerald-300 rounded text-[10px] font-bold flex items-center gap-1 transition-all"
+                                      title="Directly download formatted PDF with metadata and compliance audit findings"
+                                    >
+                                      <Download className="w-3 h-3 text-emerald-400" />
+                                      Download as PDF
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowEmbeddedPdfViewer(!showEmbeddedPdfViewer)}
+                                      className={`px-2 py-1 border rounded text-[10px] font-bold flex items-center gap-1 transition-all ${
+                                        showEmbeddedPdfViewer
+                                          ? "bg-indigo-600 border-indigo-500 text-white shadow"
+                                          : "bg-indigo-950/60 hover:bg-indigo-900 border-indigo-700/60 text-indigo-300"
+                                      }`}
+                                      title="Toggle in-platform embedded PDF viewer"
+                                    >
+                                      <Eye className="w-3 h-3 text-amber-300" />
+                                      {showEmbeddedPdfViewer ? "Hide PDF View" : "Embedded PDF"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedBulkDocIds((prev) =>
+                                          prev.includes(selectedVaultDoc.id)
+                                            ? prev.filter((id) => id !== selectedVaultDoc.id)
+                                            : [...prev, selectedVaultDoc.id]
+                                        );
+                                        showToast(
+                                          selectedBulkDocIds.includes(selectedVaultDoc.id)
+                                            ? `Removed "${selectedVaultDoc.name}" from bulk print queue.`
+                                            : `Added "${selectedVaultDoc.name}" to bulk print queue.`
+                                        );
+                                      }}
+                                      className={`px-2 py-1 border rounded text-[10px] font-bold flex items-center gap-1 transition-all ${
+                                        selectedBulkDocIds.includes(selectedVaultDoc.id)
+                                          ? "bg-amber-950/60 border-amber-500/50 text-amber-300"
+                                          : "bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300"
+                                      }`}
+                                      title="Toggle inclusion in bulk combined PDF export bundle"
+                                    >
+                                      {selectedBulkDocIds.includes(selectedVaultDoc.id) ? (
+                                        <>
+                                          <CheckSquare className="w-3 h-3 text-amber-400" />
+                                          In Bundle ({selectedBulkDocIds.length})
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Square className="w-3 h-3 text-slate-400" />
+                                          Add to Bundle
+                                        </>
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (selectedBulkDocIds.length === 0) {
+                                          setSelectedBulkDocIds([selectedVaultDoc.id]);
+                                        }
+                                        setShowBulkExportModal(true);
+                                      }}
+                                      className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded text-[10px] font-bold flex items-center gap-1 transition-all"
+                                      title="Open bulk printing modal for combined portfolio export"
+                                    >
+                                      <Printer className="w-3 h-3 text-amber-400" />
+                                      Bulk Print ({selectedBulkDocIds.length > 0 ? selectedBulkDocIds.length : "All"})
                                     </button>
                                     <button
                                       type="button"
@@ -4796,6 +5366,34 @@ This power is durable and persists through any subsequent incapacity.`;
                   </AnimatePresence>
                 </div>
               </div>
+
+              {/* Bulk Document Export / Print Modal */}
+              <BulkDocumentExportModal
+                isOpen={showBulkExportModal}
+                onClose={() => setShowBulkExportModal(false)}
+                selectedDocs={uploadedDocs.filter((d) => selectedBulkDocIds.includes(d.id))}
+                allDocs={uploadedDocs}
+                onToggleDoc={(docId) => {
+                  setSelectedBulkDocIds((prev) =>
+                    prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
+                  );
+                }}
+                onSelectAll={() => setSelectedBulkDocIds(uploadedDocs.map((d) => d.id))}
+                onClearAll={() => setSelectedBulkDocIds([])}
+                jurisdiction={selectedSubnational || selectedCountry}
+                currentUser={currentUser}
+                showToast={showToast}
+              />
+
+              {/* Batch Document Renaming Modal */}
+              <BatchRenameModal
+                isOpen={showBatchRenameModal}
+                onClose={() => setShowBatchRenameModal(false)}
+                selectedDocs={uploadedDocs.filter((d) => selectedBulkDocIds.includes(d.id))}
+                allDocs={uploadedDocs}
+                onApplyRename={handleBatchRename}
+                showToast={showToast}
+              />
             </div>
           )}
 
@@ -6121,6 +6719,51 @@ This power is durable and persists through any subsequent incapacity.`;
               </div>
               
             </div>
+          )}
+
+          {/* Lawyer Matching System Tab */}
+          {activeTab === "lawyer-match" && (
+            <LawyerMatching
+              onBookConsultation={async (booking) => {
+                const fullBooking: ConsultationBooking = {
+                  id: booking.id || `booking-${Date.now()}`,
+                  lawyerId: booking.lawyerId || "attorney-clara",
+                  lawyerName: booking.lawyerName || "Hon. Clara Sterling, QC",
+                  duration: booking.duration || 60,
+                  date: booking.date || new Date().toISOString().split("T")[0],
+                  time: booking.time || "10:00 AM",
+                  retainerFee: booking.retainerFee || 250,
+                  status: booking.status || "Confirmed",
+                  syncedWithCalendar: booking.syncedWithCalendar ?? true,
+                  caseNotes: booking.caseNotes || "",
+                  legalQuestions: booking.legalQuestions || "",
+                  smsReminder: booking.smsReminder ?? true,
+                  emailReminder: booking.emailReminder ?? true,
+                  reminderPhone: booking.reminderPhone || "",
+                  reminderEmail: booking.reminderEmail || (currentUser?.email || "counsel@alllegalmatters.com"),
+                };
+                setBookings((prev) => [fullBooking, ...prev]);
+                try {
+                  await setDoc(doc(db, "bookings", fullBooking.id), fullBooking);
+                } catch (dbErr) {
+                  console.warn("Could not sync booking with Cloud Firestore", dbErr);
+                }
+              }}
+              currentUser={currentUser}
+              showToast={showToast}
+              onNavigateToTab={setActiveTab}
+            />
+          )}
+
+          {/* Legal Glossary Tab */}
+          {activeTab === "glossary" && (
+            <LegalGlossary
+              onAskCounsel={(query) => {
+                setChatMessage(query);
+                setActiveTab("counsel");
+              }}
+              showToast={showToast}
+            />
           )}
 
           {/* 6. Multimodal Tools, Video & Audio */}

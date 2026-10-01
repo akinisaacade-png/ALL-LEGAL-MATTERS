@@ -22,6 +22,7 @@ import {
   Scale
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import ComplianceAudioSummary from "./ComplianceAudioSummary";
 
 interface ComplianceDashboardProps {
   documents: LegalDocument[];
@@ -1265,6 +1266,12 @@ export default function ComplianceDashboard({
                   </div>
                 </div>
               )}
+
+              {/* Spoken Compliance Summary Feedback Loop */}
+              <ComplianceAudioSummary
+                document={selectedDoc}
+                showToast={showToast}
+              />
 
               {/* Stats overview of selected document */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

@@ -104,4 +104,43 @@ export interface Attorney {
   availabilityMap: { [day: string]: number }; // percentage of availability 0-100 for Mon-Fri
   reviews: string[];
   availabilityHours?: { [day: string]: string[] };
+  yearsOfExperience?: number;
+  barAdmissions?: string[];
+  bio?: string;
+  languages?: string[];
+  verified?: boolean;
+  consultationTypes?: ("video" | "phone" | "in-person")[];
+  successRate?: number;
+  firmName?: string;
+  education?: string;
+}
+
+export interface LegalIssueIntake {
+  category: string;
+  jurisdiction: string;
+  urgency: "Immediate (< 24h)" | "Standard (1-3 days)" | "Planning (1-2 weeks)" | "General Consultation";
+  budgetMax: number;
+  summary: string;
+  partiesInvolved?: string;
+  preferredLanguage?: string;
+  consultationType?: "video" | "phone" | "in-person";
+}
+
+export interface LawyerMatchResult {
+  lawyer: Attorney;
+  matchScore: number;
+  matchReasons: string[];
+  recommendedSlot?: string;
+}
+
+export interface GlossaryTerm {
+  id: string;
+  term: string;
+  pronunciation?: string;
+  category: "Contracts" | "Corporate" | "Litigation" | "Real Estate" | "Intellectual Property" | "Constitutional" | "Employment" | "International";
+  definition: string;
+  plainEnglish: string;
+  exampleUsage: string;
+  relatedTerms: string[];
+  latinRoot?: string;
 }
