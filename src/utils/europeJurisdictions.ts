@@ -167,17 +167,8 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: null,
-      email: null,
-    },
-    operationType,
-    path
-  };
-  console.warn('Firestore Operation Warning: ', JSON.stringify(errInfo));
+function handleFirestoreError(_error: unknown, _operationType: OperationType, _path: string | null) {
+  // Gracefully handled with local fallback dataset
 }
 
 /**

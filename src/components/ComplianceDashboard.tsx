@@ -19,10 +19,13 @@ import {
   Percent,
   Timer,
   Sliders,
-  Scale
+  Scale,
+  Flame,
+  Grid
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import ComplianceAudioSummary from "./ComplianceAudioSummary";
+import { ClauseRiskHeatmap } from "./ClauseRiskHeatmap";
 
 interface ComplianceDashboardProps {
   documents: LegalDocument[];
@@ -48,7 +51,7 @@ export default function ComplianceDashboard({
   const [activeSort, setActiveSort] = useState<"risk-desc" | "risk-asc" | "name">("risk-desc");
 
   // New Tabbed navigation for Compliance Panel
-  const [complianceSubTab, setComplianceSubTab] = useState<"overview" | "compare" | "history">("overview");
+  const [complianceSubTab, setComplianceSubTab] = useState<"overview" | "heatmap" | "compare" | "history">("overview");
 
   // Active focused document inside Compliance Panel (for detailed breakdown and PDF)
   const [selectedDocId, setSelectedDocId] = useState<string | null>(
@@ -900,6 +903,18 @@ export default function ComplianceDashboard({
           Interactive Scatter Map
         </button>
         <button
+          id="subtab-heatmap"
+          onClick={() => setComplianceSubTab("heatmap")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-lg transition-all ${
+            complianceSubTab === "heatmap"
+              ? "bg-slate-900 text-rose-400 border-t border-x border-slate-800 border-b shadow-[0_1px_0_0_rgba(15,23,42,1)]"
+              : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/40"
+          }`}
+        >
+          <Flame className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+          Clause Risk Heatmap
+        </button>
+        <button
           id="subtab-compare"
           onClick={() => setComplianceSubTab("compare")}
           className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-lg transition-all ${
@@ -1377,6 +1392,28 @@ export default function ComplianceDashboard({
               Please select a document from the sidebar to inspect detailed violations.
             </div>
           )}
+
+          {/* D3-based Clause Risk Density Heatmap in Overview */}
+          <div className="pt-4 border-t border-slate-800/80">
+            <ClauseRiskHeatmap
+              documents={documents}
+              onSelectDoc={onSelectDoc}
+              onNavigateToTab={onNavigateToTab}
+              showToast={showToast}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* RENDER - D3 CLAUSE RISK DENSITY HEATMAP DEDICATED TAB */}
+      {complianceSubTab === "heatmap" && (
+        <div id="compliance-heatmap-panel" className="space-y-6">
+          <ClauseRiskHeatmap
+            documents={documents}
+            onSelectDoc={onSelectDoc}
+            onNavigateToTab={onNavigateToTab}
+            showToast={showToast}
+          />
         </div>
       )}
 

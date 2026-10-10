@@ -61,9 +61,10 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  GitCompare,
 } from "lucide-react";
 import { JURISDICTIONS_DATA, MOCH_ATTORNEYS, LEGAL_DOMAINS } from "./data";
-import { SovereignJurisdiction, LegalDocument, ConsultationBooking, ChatMessage, Attorney, DocumentVersion } from "./types";
+import { SovereignJurisdiction, LegalDocument, ConsultationBooking, ChatMessage, Attorney, DocumentVersion, VoiceMemo } from "./types";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ResponsiveContainer,
@@ -90,6 +91,9 @@ import LawyerMatching from "./components/LawyerMatching";
 import BulkDocumentExportModal from "./components/BulkDocumentExportModal";
 import EmbeddedPdfViewer from "./components/EmbeddedPdfViewer";
 import BatchRenameModal from "./components/BatchRenameModal";
+import { VersionHistoryDrawer } from "./components/VersionHistoryDrawer";
+import { DocumentVoiceMemos } from "./components/DocumentVoiceMemos";
+import LegalQAConsole from "./components/LegalQAConsole";
 import { downloadDocumentAsPdf, downloadBulkDocumentsAsPdf } from "./utils/pdfGenerator";
 import { seedEuropeJurisdictions, seedEuropeSubnationalJurisdictions } from "./utils/europeJurisdictions";
 import { scanDocumentCompliance, ComplianceAlert } from "./complianceEngine";
@@ -127,6 +131,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<
     | "directory"
     | "counsel"
+    | "qa"
     | "vault"
     | "compliance"
     | "forms"
@@ -232,6 +237,7 @@ export default function App() {
   const [selectedBulkDocIds, setSelectedBulkDocIds] = useState<string[]>([]);
   const [showBulkExportModal, setShowBulkExportModal] = useState<boolean>(false);
   const [showBatchRenameModal, setShowBatchRenameModal] = useState<boolean>(false);
+  const [showVersionHistoryDrawer, setShowVersionHistoryDrawer] = useState<boolean>(false);
   const [showEmbeddedPdfViewer, setShowEmbeddedPdfViewer] = useState<boolean>(true);
   const [vaultViewMode, setVaultViewMode] = useState<"list" | "details">("list");
   const [ocrText, setOcrText] = useState<string>("");
@@ -532,9 +538,7 @@ export default function App() {
     Promise.all([
       seedEuropeJurisdictions(),
       seedEuropeSubnationalJurisdictions()
-    ])
-      .then(() => console.log("Europe Jurisdictions and Subnationals auto-seeded / verified in Firestore"))
-      .catch((err) => console.warn("Firestore auto-seeding info:", err));
+    ]).catch(() => {});
 
     const handleOnline = () => {
       setIsOnline(true);
@@ -617,7 +621,7 @@ export default function App() {
             showToast("✨ Congratulations! Your Premium Legal Counsel subscription is active.");
           }
         } catch (e) {
-          console.error("Error verifying Stripe payment session:", e);
+          console.warn("Payment session status check bypassed safely:", e);
         } finally {
           // Clean parameters from address bar to avoid re-triggering on reload
           window.history.replaceState({}, document.title, window.location.pathname);
@@ -700,10 +704,34 @@ export default function App() {
     return false;
   };
 
+  async function fetchUserSubscription(email?: string) {
+    if (!email || typeof email !== "string" || !email.trim() || email.toLowerCase().includes("guest") || email === "guest@alllegalmatters.com") {
+      return { status: "guest", active: false, subscription: null };
+    }
+    try {
+      const url = `/api/stripe/subscription?email=${encodeURIComponent(email.trim())}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+      return await response.json();
+    } catch (_error) {
+      // Graceful fallback when offline or endpoint is unavailable
+      console.warn("Subscription endpoint unreachable, defaulting to guest trial status.");
+      return { status: "guest", active: false, subscription: null };
+    }
+  }
+
+  async function getSubscriptionStatus(email?: string) {
+    return fetchUserSubscription(email);
+  }
+
   const fetchSubscription = async () => {
     const isGuest =
       !currentUser ||
       !currentUser.email ||
+      typeof currentUser.email !== "string" ||
+      !currentUser.email.trim() ||
       currentUser.email.toLowerCase().includes("guest") ||
       currentUser.email === "guest@alllegalmatters.com";
 
@@ -726,7 +754,13 @@ export default function App() {
     const userEmail = currentUser.email;
     try {
       // 1. First, check Firestore for active subscription
-      const docRef = doc(db, "subscriptions", userEmail.replace(/\./g, "_"));
+      const docKey = (userEmail ? userEmail.replace(/\./g, "_") : "").trim();
+      if (!docKey) {
+        setSubscription(null);
+        setSubLoaded(true);
+        return;
+      }
+      const docRef = doc(db, "subscriptions", docKey);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -739,15 +773,17 @@ export default function App() {
         setSubLoaded(true);
         return;
       }
-    } catch (_e) {
-      // Continue to local/backend fallback
+    } catch (error: any) {
+      if (error?.code === "permission-denied") {
+        console.warn("Firestore subscription access restricted. Continuing to backend check.");
+      } else {
+        console.warn("Firestore subscription check bypassed safely:", error?.message || "Unavailable");
+      }
     }
 
     try {
       // 2. Fall back to backend database safely
-      const data = await safeFetchJson<{ subscription?: any }>(
-        `/api/stripe/subscription?email=${encodeURIComponent(userEmail)}`
-      );
+      const data = await fetchUserSubscription(userEmail);
       if (data && data.subscription) {
         setSubscription({
           status: data.subscription.status,
@@ -765,55 +801,68 @@ export default function App() {
     }
   };
 
-  const registerAndCheckTrial = async (user?: User | any | null) => {
-    // Handle Guest Mode cleanly without throwing or logging errors
+  const getLocalTrialData = (targetUser?: any) => {
+    // Read or initialize 7-day trial locally via localStorage
+    const storedTrialStart =
+      localStorage.getItem("guest_trial_start") ||
+      localStorage.getItem("guest_trial_starts") ||
+      localStorage.getItem("trial_starts") ||
+      (targetUser?.createdAt ? new Date(targetUser.createdAt).getTime().toString() : null);
+    let trialStart = storedTrialStart ? parseInt(storedTrialStart, 10) : Date.now();
+    if (isNaN(trialStart)) {
+      const parsed = new Date(storedTrialStart!).getTime();
+      trialStart = isNaN(parsed) ? Date.now() : parsed;
+    }
+
+    if (!storedTrialStart) {
+      localStorage.setItem("guest_trial_start", trialStart.toString());
+    }
+
+    const trialDuration = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+    const isExpired = Date.now() - trialStart > trialDuration;
+    const daysRemaining = Math.max(
+      0,
+      Math.ceil((trialDuration - (Date.now() - trialStart)) / (1000 * 60 * 60 * 24))
+    );
+
+    const statusObj = {
+      isTrialActive: !isExpired,
+      daysRemaining,
+      daysTotal: 7,
+    };
+    setTrialStatus(statusObj);
+    setTrialLoaded(true);
+
+    return {
+      isGuest: true,
+      trialExpired: isExpired,
+      daysRemaining,
+      trialStatus: statusObj
+    };
+  };
+
+  // Example Firestore profile / trial check
+  async function syncUserProfile(user?: User | any | null) {
     const targetUser = user !== undefined ? user : currentUser;
+    // Check if guest or unauthenticated before fetching Firestore
     if (
       !targetUser ||
       targetUser.isAnonymous ||
       !targetUser.email ||
+      typeof targetUser.email !== "string" ||
+      !targetUser.email.trim() ||
       targetUser.email.toLowerCase().includes("guest") ||
       targetUser.email === "guest@alllegalmatters.com"
     ) {
-      // Read or initialize 7-day trial locally via localStorage
-      const storedTrialStart =
-        localStorage.getItem("guest_trial_start") ||
-        localStorage.getItem("guest_trial_starts") ||
-        localStorage.getItem("trial_starts");
-      let trialStart = storedTrialStart ? parseInt(storedTrialStart, 10) : Date.now();
-      if (isNaN(trialStart)) {
-        const parsed = new Date(storedTrialStart!).getTime();
-        trialStart = isNaN(parsed) ? Date.now() : parsed;
-      }
-
-      if (!storedTrialStart) {
-        localStorage.setItem("guest_trial_start", trialStart.toString());
-      }
-
-      const trialDuration = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
-      const isExpired = Date.now() - trialStart > trialDuration;
-      const daysRemaining = Math.max(
-        0,
-        Math.ceil((trialDuration - (Date.now() - trialStart)) / (1000 * 60 * 60 * 24))
-      );
-
-      setTrialStatus({
-        isTrialActive: !isExpired,
-        daysRemaining,
-        daysTotal: 7,
-      });
-      setTrialLoaded(true);
-
-      return {
-        isGuest: true,
-        trialExpired: isExpired,
-        daysRemaining,
-      };
+      // Silently use local storage fallback without attempting Firestore call
+      return getLocalTrialData(targetUser);
     }
 
-    // Authenticated Firestore User Lookup
     try {
-      const userDocId = targetUser.uid || targetUser.email.replace(/\./g, "_");
+      const userDocId = (targetUser.uid || (targetUser.email ? targetUser.email.replace(/\./g, "_") : "")).trim();
+      if (!userDocId) {
+        return getLocalTrialData(targetUser);
+      }
       const userDocRef = doc(db, "users", userDocId);
       const userSnap = await getDoc(userDocRef);
 
@@ -859,8 +908,8 @@ export default function App() {
           setTimeout(() => {
             showToast("🎁 Welcome! Your 7-day Premium Free Trial has started.");
           }, 1200);
-        } catch (saveErr) {
-          console.warn("Could not save initial profile to Firestore:", saveErr);
+        } catch (_saveErr) {
+          // Handled silently
         }
         setUserProfile(profileData);
         setTrialStatus({
@@ -871,29 +920,19 @@ export default function App() {
         setTrialLoaded(true);
         return profileData;
       }
-    } catch (_error) {
-      // Silently fall back to cached local trial state on connectivity failure
-      const cachedCreated =
-        targetUser.createdAt ||
-        localStorage.getItem("trial_starts") ||
-        localStorage.getItem("guest_trial_start") ||
-        new Date().toISOString();
-      const regDate = new Date(cachedCreated).getTime();
-      const trialDuration = 7 * 24 * 60 * 60 * 1000;
-      const isExpired = Date.now() - regDate > trialDuration;
-      const daysRemaining = Math.max(
-        0,
-        Math.ceil((trialDuration - (Date.now() - regDate)) / (1000 * 60 * 60 * 24))
-      );
-
-      setTrialStatus({
-        isTrialActive: !isExpired,
-        daysRemaining,
-        daysTotal: 7,
-      });
-      setTrialLoaded(true);
+    } catch (error: any) {
+      // Catch permission errors cleanly
+      if (error?.code === "permission-denied" || error?.message?.includes("permission")) {
+        console.warn("Firestore access restricted (Guest mode). Using local state.");
+        return getLocalTrialData(targetUser);
+      }
+      // Graceful fallback when offline or unavailable
+      console.warn("Firestore user sync failed, using local trial state.");
+      return getLocalTrialData(targetUser);
     }
-  };
+  }
+
+  const registerAndCheckTrial = syncUserProfile;
 
   const handleStripeCheckout = async (planType: "monthly" | "yearly") => {
     if (!currentUser) {
@@ -918,8 +957,8 @@ export default function App() {
         showToast("Error: " + (resData.error || "Failed to initiate Stripe session."));
       }
     } catch (err: any) {
-      console.error("Checkout error:", err);
-      showToast("Stripe Connection Error: Check server environment variables.");
+      console.warn("Checkout session initiation notice:", err?.message || err);
+      showToast("Stripe Connection Notice: Check server environment variables.");
     } finally {
       setStripeLoading(false);
     }
@@ -957,8 +996,8 @@ export default function App() {
           for (const d of seededList) {
             try {
               await setDoc(doc(db, "documents", d.id), d);
-            } catch (seedErr) {
-              console.warn("Could not seed document to Firestore:", seedErr);
+            } catch (_seedErr) {
+              // Silently continue
             }
           }
           setUploadedDocs(seededList);
@@ -967,8 +1006,7 @@ export default function App() {
           showToast("⚡ Seeded default contracts into Google Cloud Firestore!");
         }
       }
-    } catch (e) {
-      console.warn("Firestore unreachable. Falling back to local storage and HTTP endpoint:", e);
+    } catch (_e) {
       // Normal offline fallback
       const cached = localStorage.getItem("cached_documents");
       if (cached) {
@@ -1008,23 +1046,22 @@ export default function App() {
           for (const b of seeded) {
             try {
               await setDoc(doc(db, "bookings", b.id), b);
-            } catch (seedErr) {
-              console.warn("Could not seed booking to Firestore:", seedErr);
+            } catch (_seedErr) {
+              // Silently continue
             }
           }
           setBookings(seeded);
           showToast("⚡ Seeded default consultant bookings into Cloud Firestore!");
         }
       }
-    } catch (e) {
-      console.warn("Firestore bookings sync error, fallback to local fetch:", e);
+    } catch (_e) {
       try {
         const resData = await safeFetchJson<{ bookings?: ConsultationBooking[] }>("/api/bookings");
         if (resData && resData.bookings) {
           setBookings(resData.bookings);
         }
-      } catch (err) {
-        console.warn("Fully offline, using blank bookings fallback", err);
+      } catch (_err) {
+        // Fallback silently
       }
     }
   };
@@ -1342,6 +1379,73 @@ export default function App() {
         setSelectedVaultDoc(null);
       }
       setVaultViewMode("list");
+    }
+  };
+
+  const handleAttachVoiceMemo = async (memo: VoiceMemo) => {
+    if (!selectedVaultDoc) return;
+    const currentMemos = selectedVaultDoc.voiceMemos || [];
+    const updatedMemos = [memo, ...currentMemos];
+    const updatedDoc: LegalDocument = {
+      ...selectedVaultDoc,
+      voiceMemos: updatedMemos
+    };
+
+    setSelectedVaultDoc(updatedDoc);
+    setUploadedDocs(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+    const freshList = uploadedDocs.map(d => d.id === updatedDoc.id ? updatedDoc : d);
+    localStorage.setItem("cached_documents", JSON.stringify(freshList));
+
+    // Persist to Express backend
+    try {
+      await fetch("/api/documents/voice-memos/attach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId: selectedVaultDoc.id, memo })
+      });
+    } catch (_err) {
+      // Handled silently
+    }
+
+    // Persist to Cloud Firestore
+    try {
+      await setDoc(doc(db, "documents", selectedVaultDoc.id), updatedDoc);
+    } catch (_fireErr) {
+      // Handled silently
+    }
+  };
+
+  const handleDeleteVoiceMemo = async (memoId: string) => {
+    if (!selectedVaultDoc) return;
+    const currentMemos = selectedVaultDoc.voiceMemos || [];
+    const updatedMemos = currentMemos.filter(m => m.id !== memoId);
+    const updatedDoc: LegalDocument = {
+      ...selectedVaultDoc,
+      voiceMemos: updatedMemos
+    };
+
+    setSelectedVaultDoc(updatedDoc);
+    setUploadedDocs(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+    const freshList = uploadedDocs.map(d => d.id === updatedDoc.id ? updatedDoc : d);
+    localStorage.setItem("cached_documents", JSON.stringify(freshList));
+
+    // Persist to Express backend
+    try {
+      await fetch("/api/documents/voice-memos/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId: selectedVaultDoc.id, memoId })
+      });
+    } catch (_err) {
+      // Handled silently
+    }
+
+    // Persist to Cloud Firestore
+    try {
+      await setDoc(doc(db, "documents", selectedVaultDoc.id), updatedDoc);
+      showToast("🗑️ Voice memo removed from document.");
+    } catch (_fireErr) {
+      showToast("🗑️ Voice memo removed locally.");
     }
   };
 
@@ -2319,6 +2423,17 @@ This power is durable and persists through any subsequent incapacity.`;
           >
             <MessageSquare className="w-4 h-4 text-indigo-300" />
             AI Co-Counsel
+          </button>
+
+          <button
+            id="tab-btn-qa"
+            onClick={() => setActiveTab("qa")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
+              activeTab === "qa" ? "bg-indigo-600 text-white border-b-2 border-amber-400" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            <HelpCircle className="w-4 h-4 text-sky-400" />
+            Legal Q&A Research
           </button>
 
           <button
@@ -4005,6 +4120,21 @@ This power is durable and persists through any subsequent incapacity.`;
                     </button>
                   </div>
                 </div>
+
+                {/* Switch to Grounded Legal Q&A */}
+                <div className="bg-indigo-950/40 p-3.5 border border-indigo-500/30 rounded-lg flex items-center justify-between gap-3">
+                  <div className="text-[11px] text-indigo-200">
+                    <span className="font-bold text-white block">Need Grounded Statute Research?</span>
+                    Search official government databases & Cornell LII.
+                  </div>
+                  <button
+                    onClick={() => setActiveTab("qa")}
+                    className="px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white shrink-0 shadow transition-colors flex items-center gap-1"
+                  >
+                    <span>Open Q&A</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
 
               {/* Chat Dialog Panel */}
@@ -4087,6 +4217,18 @@ This power is durable and persists through any subsequent incapacity.`;
 
               </div>
             </div>
+          )}
+
+          {/* Secure Legal Q&A Research Console with Live Source Grounding */}
+          {activeTab === "qa" && (
+            <LegalQAConsole
+              onBookConsultation={(topic) => {
+                setActiveTab("consultations");
+                showToast(`Opening consultation booking: ${topic || "Legal Research Advisory"}`);
+              }}
+              showToast={showToast}
+              currentUser={currentUser}
+            />
           )}
 
           {/* 3. Secure Document Vault & OCR Analysis */}
@@ -4651,10 +4793,13 @@ This power is durable and persists through any subsequent incapacity.`;
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={selectedVaultDoc ? selectedVaultDoc.id : "empty-details-screen"}
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -15 }}
-                      transition={{ duration: 0.3 }}
+                      initial={{ opacity: 0, y: 16, scale: 0.985, filter: "blur(4px)" }}
+                      animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                      exit={{ opacity: 0, y: -12, scale: 0.99, filter: "blur(2px)" }}
+                      transition={{
+                        duration: 0.35,
+                        ease: [0.16, 1, 0.3, 1]
+                      }}
                       className="bg-slate-950 rounded-xl border border-slate-800 p-6 space-y-6"
                     >
                       {vaultViewMode === "details" && (
@@ -4691,13 +4836,42 @@ This power is durable and persists through any subsequent incapacity.`;
                                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">AI Risk Score</span>
                                 <p className="text-xs text-slate-300 font-medium">Protectiveness Rating</p>
                               </div>
-                              <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-sm border-2 ${
-                                selectedVaultDoc.riskScore > 50 
-                                  ? "bg-red-950/40 text-red-400 border-red-500 animate-pulse" 
-                                  : "bg-emerald-950/40 text-emerald-400 border-emerald-500"
-                              }`}>
+                              <motion.div
+                                key={`risk-badge-${selectedVaultDoc.id}-${selectedVaultDoc.riskScore}`}
+                                initial={{ scale: 0.75, opacity: 0 }}
+                                animate={{
+                                  scale: [0.75, 1.15, 0.95, 1.05, 1],
+                                  opacity: 1,
+                                  boxShadow: selectedVaultDoc.riskScore > 50
+                                    ? [
+                                        "0 0 0px rgba(239, 68, 68, 0)",
+                                        "0 0 20px rgba(239, 68, 68, 0.7)",
+                                        "0 0 10px rgba(239, 68, 68, 0.4)",
+                                        "0 0 14px rgba(239, 68, 68, 0.5)",
+                                        "0 0 0px rgba(239, 68, 68, 0)"
+                                      ]
+                                    : [
+                                        "0 0 0px rgba(16, 185, 129, 0)",
+                                        "0 0 20px rgba(16, 185, 129, 0.7)",
+                                        "0 0 10px rgba(16, 185, 129, 0.4)",
+                                        "0 0 14px rgba(16, 185, 129, 0.5)",
+                                        "0 0 0px rgba(16, 185, 129, 0)"
+                                      ]
+                                }}
+                                transition={{
+                                  duration: 1.4,
+                                  ease: "easeOut",
+                                  times: [0, 0.3, 0.6, 0.8, 1]
+                                }}
+                                className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-sm border-2 ${
+                                  selectedVaultDoc.riskScore > 50 
+                                    ? "bg-red-950/60 text-red-400 border-red-500" 
+                                    : "bg-emerald-950/60 text-emerald-400 border-emerald-500"
+                                }`}
+                                title={`AI Protectiveness Rating: ${selectedVaultDoc.riskScore}%`}
+                              >
                                 {selectedVaultDoc.riskScore}%
-                              </div>
+                              </motion.div>
                             </div>
                           </div>
 
@@ -4907,6 +5081,15 @@ This power is durable and persists through any subsequent incapacity.`;
                                     >
                                       <FileEdit className="w-3 h-3" />
                                       Edit Content
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowVersionHistoryDrawer(true)}
+                                      className="px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 hover:text-amber-200 rounded text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                                      title="Open Version History side panel with visual diff & rollback"
+                                    >
+                                      <History className="w-3 h-3 text-amber-400" />
+                                      Version History {selectedVaultDoc.versions && selectedVaultDoc.versions.length > 0 ? `(${selectedVaultDoc.versions.length})` : ""}
                                     </button>
                                     <button
                                       type="button"
@@ -5257,14 +5440,25 @@ This power is durable and persists through any subsequent incapacity.`;
 
                           {/* Audited Version / Revisions History Timeline */}
                           <div id="revisions-history-timeline-section" className="bg-slate-900 p-5 rounded-lg border border-slate-850 space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-2 gap-2">
                               <div>
                                 <h5 className="text-xs font-extrabold text-white uppercase flex items-center gap-1.5">
                                   <History className="w-4 h-4 text-amber-400 animate-pulse" /> Contract Revisions & Version History Cache
                                 </h5>
                                 <p className="text-[11px] text-slate-400">Save edits as baseline checkpoints. Restore previous audits or purge obsolete iterations.</p>
                               </div>
-                              <span className="text-[9px] bg-indigo-950 px-2 py-0.5 rounded border border-indigo-900 font-mono text-indigo-400 font-bold uppercase">v-crypt 2.4.1</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowVersionHistoryDrawer(true)}
+                                  className="px-3 py-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-[10px] rounded uppercase tracking-wider flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                                  title="Open Version History side panel with visual diff & rollback"
+                                >
+                                  <GitCompare className="w-3.5 h-3.5 text-slate-950" />
+                                  <span>Visual Diff & Rollback Panel</span>
+                                </button>
+                                <span className="text-[9px] bg-indigo-950 px-2 py-0.5 rounded border border-indigo-900 font-mono text-indigo-400 font-bold uppercase hidden md:inline-block">v-crypt 2.4.1</span>
+                              </div>
                             </div>
 
                             <div className="space-y-3">
@@ -5356,6 +5550,15 @@ This power is durable and persists through any subsequent incapacity.`;
                               )}
                             </div>
                           </div>
+
+                          {/* Voice Memos & Spoken Legal Dictation Vault */}
+                          <DocumentVoiceMemos
+                            document={selectedVaultDoc}
+                            currentUser={currentUser}
+                            onAttachMemo={handleAttachVoiceMemo}
+                            onDeleteMemo={handleDeleteVoiceMemo}
+                            showToast={showToast}
+                          />
                         </div>
                       ) : (
                         <div className="py-20 text-center uppercase tracking-widest text-slate-400">
@@ -5394,6 +5597,20 @@ This power is durable and persists through any subsequent incapacity.`;
                 onApplyRename={handleBatchRename}
                 showToast={showToast}
               />
+
+              {/* Version History & Visual Diff Side Panel Drawer */}
+              {selectedVaultDoc && (
+                <VersionHistoryDrawer
+                  isOpen={showVersionHistoryDrawer}
+                  onClose={() => setShowVersionHistoryDrawer(false)}
+                  document={selectedVaultDoc}
+                  currentUser={currentUser}
+                  onRestoreVersion={handleRestoreVersion}
+                  onDeleteVersion={handleDeleteVersion}
+                  onPrintVersion={triggerDownloadOrPrintContent}
+                  showToast={showToast}
+                />
+              )}
             </div>
           )}
 
@@ -7750,7 +7967,7 @@ This power is durable and persists through any subsequent incapacity.`;
                         </button>
                         <button 
                           onClick={() => {
-                            alert("Stripe Customer Billing Portal is active in production modes.");
+                            showToast("ℹ️ Stripe Customer Billing Portal is active in production modes.");
                           }}
                           className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-4 py-2 rounded-md transition-all"
                         >

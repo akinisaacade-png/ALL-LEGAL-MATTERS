@@ -49,6 +49,17 @@ export interface DocumentVersion {
   suggestedRedlines?: RedlineSuggestion[];
 }
 
+export interface VoiceMemo {
+  id: string;
+  title: string;
+  audioBlobUrl: string; // Base64 data URL or Object URL
+  durationSeconds: number;
+  recordedAt: string;
+  recordedBy: string;
+  notes?: string;
+  fileSizeBytes?: number;
+}
+
 export interface LegalDocument {
   id: string;
   name: string;
@@ -64,6 +75,7 @@ export interface LegalDocument {
   suggestedRedlines?: RedlineSuggestion[];
   versions?: DocumentVersion[];
   tags?: string[];
+  voiceMemos?: VoiceMemo[];
 }
 
 export interface ChatMessage {
@@ -143,4 +155,24 @@ export interface GlossaryTerm {
   exampleUsage: string;
   relatedTerms: string[];
   latinRoot?: string;
+}
+
+export interface LegalQASource {
+  title: string;
+  url: string;
+  domain: string;
+  type: "Government Authority" | "Academic Legal Repository" | "Reputable Legal Database";
+}
+
+export interface LegalQAEntry {
+  id: string;
+  question: string;
+  jurisdiction: string;
+  practiceArea: string;
+  answer: string;
+  sources: LegalQASource[];
+  searchQueries?: string[];
+  disclaimer: string;
+  timestamp: string;
+  isBookmarked?: boolean;
 }

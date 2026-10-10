@@ -11,8 +11,8 @@ service cloud.firestore {
       allow read, write: if subscriptionId != null && subscriptionId != '';
     }
     
-    match /users/{email} {
-      allow read, write: if email != null && isValidEmail(email);
+    match /users/{userId} {
+      allow read, write: if userId != null && userId != '';
     }
 
     match /documents/{documentId} {
@@ -23,12 +23,14 @@ service cloud.firestore {
       allow read, write: if bookingId != null && bookingId != '';
     }
 
-    match /jurisdictions_europe_core/{jurisdictionId} {
-      allow read, write: if jurisdictionId != null && jurisdictionId != '';
+    match /jurisdictions_europe_core/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
 
-    match /Europe_subnational/{subnationalId} {
-      allow read, write: if subnationalId != null && subnationalId != '';
+    match /Europe_subnational/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }

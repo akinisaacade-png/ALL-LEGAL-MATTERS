@@ -262,8 +262,7 @@ export default function AdminConsole({ currentUser, showToast, onRefreshAll }: A
     try {
       const userRef = doc(db, "users", userKey);
       await setDoc(userRef, { password: hashedPass }, { merge: true });
-      alert(`🔑 SECURITY RECOVERY PROTOCOL VERIFIED:\n\nTemporary access key generated for ${email}:\n\n➡️   ${tempPass}\n\nPlease supply this password key to the operator directly.`);
-      showToast(`🔑 Temporary session token restored for ${email}.`);
+      showToast(`🔑 Temporary access key generated for ${email}: ${tempPass}`);
       fetchUsersAndSubscriptions();
     } catch {
       showToast("❌ Password reset dispatch failed.");
